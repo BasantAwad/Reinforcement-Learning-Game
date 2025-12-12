@@ -1,7 +1,7 @@
 # RL Arena - Complete Project Documentation
 
 > **Last Updated**: December 12, 2025  
-> **Version**: 1.0.0
+> **Version**: 2.0.0
 
 ---
 
@@ -25,14 +25,17 @@
 
 **RL Arena** is an interactive web platform for visualizing and running Reinforcement Learning (RL) agents on classic game environments. The platform provides a real-time visual interface where users can:
 
-- Select from multiple game environments (MsPacman, KungFuMaster, MiniWorld-Maze)
+- Select from multiple game environments:
+  - **Tabular**: Taxi, Blackjack, FrozenLake, Jungle Dash (custom Pygame)
+  - **Visual**: MsPacman, KungFuMaster, MiniWorld-Maze
 - Choose RL algorithms (Dynamic Programming, Q-Learning, SARSA, DQN, Policy Gradient)
 - Watch the AI agent play the game in real-time with live frame streaming
-- Monitor training metrics (rewards, steps, episode progress) through interactive charts
+- Monitor training metrics (rewards, steps, penalties, episode progress) through interactive charts
+- View agent action logs with color-coded messages
 
 The project demonstrates the application of various RL algorithms taught in the AIE322 Advanced Machine Learning course, including:
 - **Dynamic Programming**: Value Iteration for discrete state spaces
-- **Temporal Difference Learning**: Q-Learning and SARSA
+- **Temporal Difference Learning**: Q-Learning (off-policy) and SARSA (on-policy)
 - **Deep Reinforcement Learning**: DQN (Deep Q-Network) and Policy Gradient methods
 
 ## Architecture Description
@@ -120,7 +123,9 @@ sequenceDiagram
 
 **Detailed Flow:**
 
-1. **User Selection**: User selects a game (MsPacman, KungFuMaster, or MiniWorld-Maze) and an algorithm (DP, Q-Learning, SARSA, DQN, or PG)
+1. **User Selection**: User selects a game and an algorithm:
+   - **Tabular Games**: Taxi, Blackjack, FrozenLake, Jungle Dash (support DP, Q-Learning, SARSA)
+   - **Visual Games**: MsPacman, KungFuMaster, MiniWorld-Maze (require DQN/PG)
 
 2. **Start Training**: 
    - Frontend sends `start` command via WebSocket
@@ -177,6 +182,9 @@ sequenceDiagram
 | `episode_rewards` | `list[float]` | History of episode rewards |
 | `current_episode_reward` | `float` | Accumulated reward in current episode |
 | `total_steps` | `int` | Total steps across all episodes |
+| `total_penalties` | `float` | Total penalties (negative rewards) |
+| `episode_count` | `int` | Current episode number |
+| `current_game_id` | `str` | ID of the currently loaded game |
 
 **Methods**:
 | Method | Parameters | Returns | Description |
@@ -184,10 +192,14 @@ sequenceDiagram
 | `start_training` | `game_id: str, algo_id: str, websocket` | `None` | Async method that initializes environment/agent and runs training loop |
 | `init_agent` | `algo_id: str, n_actions: int, input_shape: tuple, is_visual: bool` | `None` | Creates appropriate agent based on algorithm selection |
 | `stop` | None | `None` | Stops training loop and closes environment |
+| `send_log` | `websocket, message: str, log_type: str` | `None` | Sends log message to frontend |
+| `get_action_name` | `action: int` | `str` | Returns human-readable action name |
 
 **Interactions**:
-- Creates and manages `DQNAgent`, `PolicyGradientAgent`, `TabularQLearningAgent`, or `DynamicProgrammingAgent`
+- Creates and manages `DQNAgent`, `PolicyGradientAgent`, `TabularQLearningAgent`, `SARSAAgent`, or `DynamicProgrammingAgent`
 - Uses `ResizeAndGrayscale` and `FrameStack` wrappers from `envs.wrappers`
+- Uses `JungleDashEnv` from `envs.jungle_dash`
+- Uses `BlackjackObsWrapper` for Blackjack observation space conversion
 - Communicates with frontend via WebSocket
 
 ---
@@ -336,6 +348,33 @@ Input (CxHxW) → Conv2d(32, 8x8, stride=4) → ReLU
 | `save` | `path: str` | `None` | Save Q-table to .npy file |
 | `load` | `path: str` | `None` | Load Q-table from file |
 
+**Update Rule**: `Q(s,a) ← Q(s,a) + α[r + γ·max Q(s',a') - Q(s,a)]`
+
+---
+
+### `SARSAAgent` (agents/tabular.py)
+
+**Purpose**: On-policy SARSA agent for discrete state/action spaces. Key difference from Q-Learning: uses the actual next action taken instead of max Q-value.
+
+**Attributes**:
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `q_table` | `np.ndarray` | Q-value table (states × actions) |
+| `alpha` | `float` | Learning rate (0.1) |
+| `gamma` | `float` | Discount factor (0.99) |
+| `epsilon` | `float` | Exploration rate (0.1) |
+| `next_action` | `int` | Stored next action for SARSA update |
+
+**Methods**:
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `act` | `observation` | `int` | Epsilon-greedy action selection |
+| `step` | `state, action, reward, next_state, done` | `None` | SARSA on-policy update rule |
+| `save` | `path: str` | `None` | Save Q-table to .npy file |
+| `load` | `path: str` | `None` | Load Q-table from file |
+
+**Update Rule**: `Q(s,a) ← Q(s,a) + α[r + γ·Q(s',a') - Q(s,a)]` where a' is the actual next action
+
 ---
 
 ### `DynamicProgrammingAgent` (agents/tabular.py)
@@ -397,6 +436,46 @@ Input (CxHxW) → Conv2d(32, 8x8, stride=4) → ReLU
 
 ---
 
+### `JungleDashEnv` (envs/jungle_dash.py)
+
+**Purpose**: Custom Pygame-based grid world environment for RL training. Features sprite-based rendering.
+
+**Attributes**:
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `grid_size` | `int` | Size of the grid (default: 8×8) |
+| `grid` | `np.ndarray` | 2D array representing cell types |
+| `agent_pos` | `list` | Current [row, col] position of agent |
+| `goal_pos` | `list` | Position of the treasure goal |
+| `sprites` | `dict` | Loaded sprite images (Pink Monster, Rocks) |
+| `P` | `dict` | Transition probability matrix for DP |
+
+**Cell Types**:
+- `EMPTY (0)`: Passable cell
+- `AGENT (1)`: Player position
+- `OBSTACLE (2)`: Rocks (block movement)
+- `REWARD (3)`: Coins (+10 reward)
+- `GOAL (4)`: Treasure (+100 reward, episode end)
+- `TRAP (5)`: Pit (-50 penalty, episode end)
+
+**Methods**:
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `reset` | `seed, options` | `(obs, info)` | Reset environment, randomize objects |
+| `step` | `action` | `(obs, reward, term, trunc, info)` | Execute action, return result |
+| `render` | None | `np.ndarray` | Render frame with Pygame sprites |
+| `_build_transition_matrix` | None | None | Build P matrix for Dynamic Programming |
+
+---
+
+### `BlackjackObsWrapper` (training.py)
+
+**Purpose**: Wraps Blackjack environment to convert tuple observations to discrete integers for tabular agents.
+
+**Observation Conversion**: `(player_sum, dealer_card, usable_ace) → single integer`
+
+---
+
 ## Frontend Classes/Components
 
 ### `App` (App.tsx)
@@ -413,12 +492,18 @@ Input (CxHxW) → Conv2d(32, 8x8, stride=4) → ReLU
 | `stats` | `array` | Training statistics history |
 | `currentFrame` | `string | null` | Base64 encoded current frame |
 
+| `logs` | `array` | Agent action log entries |
+| `totalPenalties` | `number` | Accumulated penalties |
+
 **Key Functions**:
 | Function | Description |
 |----------|-------------|
 | `connectWS()` | Establishes WebSocket connection with auto-reconnect |
-| `handleStart()` | Sends start command to backend |
+| `handleStart()` | Sends start command, resets stats and logs |
 | `handleStop()` | Sends stop command to backend |
+| `isAlgoCompatible()` | Checks algorithm-game compatibility |
+| `getLogColor()` | Returns CSS class for log type |
+| `getLogIcon()` | Returns emoji icon for log type |
 
 ---
 
@@ -524,6 +609,17 @@ Input (CxHxW) → Conv2d(32, 8x8, stride=4) → ReLU
 
 ---
 
+### `backend/envs/jungle_dash.py`
+**Purpose**: Custom Pygame gymnasium environment - Jungle Dash game.
+
+**Why Needed**: Satisfies the requirement to design a 2D game using Python.
+
+**Defines**:
+- `JungleDashEnv` class
+- `register_jungle_dash()` function
+
+---
+
 ## Frontend Files
 
 ### `frontend/src/App.tsx`
@@ -604,14 +700,16 @@ Based on the AIE322 Advanced ML course requirements:
 |-------------|------------------------|-------------|
 | **Dynamic Programming (Value/Policy Iteration)** | `backend/agents/tabular.py` - `DynamicProgrammingAgent` | Implements value iteration with Bellman optimality update. Requires discrete state space (FrozenLake). Iterates until convergence, then extracts optimal policy. |
 | **Temporal Difference - Q-Learning** | `backend/agents/tabular.py` - `TabularQLearningAgent` | Implements off-policy TD learning with Q-table. Uses epsilon-greedy exploration and Q-learning update rule: Q(s,a) ← Q(s,a) + α[r + γ·max Q(s',a') - Q(s,a)] |
-| **Temporal Difference - SARSA** | `backend/agents/tabular.py` - Uses `TabularQLearningAgent` | SARSA uses the same Q-table structure but with on-policy updates. Backend auto-switches to DQN for visual environments. |
+| **Temporal Difference - SARSA** | `backend/agents/tabular.py` - `SARSAAgent` | Implements on-policy TD learning. Key difference from Q-Learning: uses actual next action a' instead of max. Update: Q(s,a) ← Q(s,a) + α[r + γ·Q(s',a') - Q(s,a)] |
 | **Deep Q-Network (DQN)** | `backend/agents/dqn.py` - `DQNAgent` | CNN-based Q-learning with experience replay and target network. Handles visual observations (4×84×84 stacked frames). Epsilon-greedy exploration with decay. |
 | **Policy Gradient (Actor-Critic)** | `backend/agents/policy_gradient.py` - `PolicyGradientAgent` | REINFORCE with baseline. Actor outputs action probabilities, Critic estimates value. Updates at episode end using advantage = R - V(s). |
+| **Tabular Environments** | `backend/training.py` | Taxi, Blackjack, FrozenLake (Gymnasium), Jungle Dash (custom). Support DP, Q-Learning, SARSA. |
 | **Atari Environments (MsPacman, KungFuMaster)** | `backend/training.py` - `start_training()` | Uses Gymnasium's ALE (Arcade Learning Environment). Applies ResizeAndGrayscale and FrameStack wrappers for DQN-compatible input. |
+| **Custom 2D Game (Jungle Dash)** | `backend/envs/jungle_dash.py` | Custom Pygame grid world with Pink Monster agent, obstacles, rewards, traps. Supports DP via transition matrix P. |
 | **MiniWorld 3D Environment** | `backend/training.py` - `start_training()` | Uses MiniWorld-Maze-v0 for 3D navigation. Applies grayscale resize wrapper. First-person view RL task. |
 | **Real-time Visualization** | `frontend/src/App.tsx` - Game Canvas | Receives Base64-encoded JPEG frames via WebSocket. Displays at ~60 FPS with pixelated rendering for retro aesthetic. |
-| **Training Metrics** | `frontend/src/App.tsx` - Stats Panel & Charts | Live line chart (Recharts) showing episode rewards. Status panel with total steps, current reward, and agent state. |
-| **Environment Wrappers (Image Preprocessing)** | `backend/envs/wrappers.py` | ResizeAndGrayscale: RGB→Gray, resize to 84×84. FrameStack: Stack 4 frames for temporal info. Both output channel-first format for PyTorch. |
+| **Training Metrics** | `frontend/src/App.tsx` - Stats Panel & Charts | Live line chart (Recharts) showing episode rewards. Status panel with total steps, penalties, current reward, and agent state. |
+| **Agent Action Logs** | `frontend/src/App.tsx` - Log Panel | Real-time color-coded logs showing agent actions, rewards, penalties, and episode outcomes. |
 
 ---
 
@@ -626,7 +724,7 @@ Based on the AIE322 Advanced ML course requirements:
 ## Project Structure
 
 ```
-AdvML/
+Reinforcement-Learning-Game/
 ├── backend/                      # Python Backend
 │   ├── __init__.py
 │   ├── main.py                   # FastAPI entry point
@@ -636,9 +734,10 @@ AdvML/
 │   │   ├── base_agent.py         # Abstract base class
 │   │   ├── dqn.py                # Deep Q-Network
 │   │   ├── policy_gradient.py    # Actor-Critic
-│   │   └── tabular.py            # Q-Learning, DP
+│   │   └── tabular.py            # Q-Learning, SARSA, DP
 │   └── envs/                     # Environment wrappers
-│       └── wrappers.py           # Frame preprocessing
+│       ├── wrappers.py           # Frame preprocessing
+│       └── jungle_dash.py        # Custom Jungle Dash game
 │
 ├── frontend/                     # React Frontend
 │   ├── src/
@@ -649,6 +748,11 @@ AdvML/
 │   ├── tailwind.config.js        # Tailwind config
 │   ├── vite.config.ts            # Vite config
 │   └── tsconfig.json             # TypeScript config
+│
+├── 1 Pink_Monster/               # Game sprites
+│   ├── Pink_Monster.png          # Agent sprite
+│   ├── Rock1.png                 # Obstacle sprite
+│   └── Rock2.png                 # Obstacle sprite
 │
 ├── DOCUMENTATION.md              # This file
 ├── README.md                     # Quick start guide
@@ -736,15 +840,16 @@ npm run dev
 
 ### Algorithm Compatibility
 
-| Algorithm | MsPacman | KungFuMaster | MiniWorld-Maze | FrozenLake (Fallback) |
-|-----------|----------|--------------|----------------|----------------------|
-| DP | ❌ | ❌ | ❌ | ✅ |
-| Q-Learning | ❌ (auto→DQN) | ❌ (auto→DQN) | ❌ (auto→DQN) | ✅ |
-| SARSA | ❌ (auto→DQN) | ❌ (auto→DQN) | ❌ (auto→DQN) | ✅ |
-| DQN | ✅ | ✅ | ✅ | ❌ |
-| PG | ✅ | ✅ | ✅ | ❌ |
+| Algorithm | Taxi | Blackjack | FrozenLake | Jungle Dash | MsPacman | KungFuMaster | MiniWorld-Maze |
+|-----------|------|-----------|------------|-------------|----------|--------------|----------------|
+| DP | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Q-Learning | ✅ | ✅ | ✅ | ✅ | ❌ (→DQN) | ❌ (→DQN) | ❌ (→DQN) |
+| SARSA | ✅ | ✅ | ✅ | ✅ | ❌ (→DQN) | ❌ (→DQN) | ❌ (→DQN) |
+| DQN | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| PG | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-- Tabular methods (DP, Q-Learning, SARSA) require discrete state spaces
+- **DP** requires transition probabilities (P attribute); Blackjack doesn't expose this
+- **Tabular methods** (DP, Q-Learning, SARSA) work best with tabular games
 - The backend auto-switches to DQN when tabular methods are selected for visual environments
 
 ### Known Limitations

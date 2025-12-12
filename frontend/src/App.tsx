@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Activity, Settings, Zap, Grid, Ghost, User, Cpu } from 'lucide-react';
+import { Play, Square, Activity, Zap, Grid, Ghost, User, Cpu, ScrollText, AlertTriangle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -9,20 +9,34 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // Types
-type Game = 'MsPacman' | 'KungFuMaster' | 'MiniWorld-Maze';
+type Game = 'MsPacman' | 'KungFuMaster' | 'MiniWorld-Maze' | 'Taxi' | 'Blackjack' | 'FrozenLake' | 'JungleDash';
 type Algorithm = 'DP' | 'Q-Learning' | 'SARSA' | 'DQN' | 'PG';
 type GameState = 'idle' | 'running' | 'stopped';
+
+interface LogEntry {
+    message: string;
+    logType: 'action' | 'reward' | 'penalty' | 'info' | 'success' | 'failure';
+    step: number;
+    timestamp: Date;
+}
+
+// Game categories
+const TABULAR_GAMES: Game[] = ['Taxi', 'Blackjack', 'FrozenLake', 'JungleDash'];
+const VISUAL_GAMES: Game[] = ['MsPacman', 'KungFuMaster', 'MiniWorld-Maze'];
 
 // Main App Component
 function App() {
     const [isConnected, setIsConnected] = useState(false);
     const reconnectTimeoutRef = useRef<number | null>(null);
-    const [selectedGame, setSelectedGame] = useState<Game>('MsPacman');
-    const [selectedAlgo, setSelectedAlgo] = useState<Algorithm>('DQN');
+    const [selectedGame, setSelectedGame] = useState<Game>('Taxi');
+    const [selectedAlgo, setSelectedAlgo] = useState<Algorithm>('Q-Learning');
     const [gameState, setGameState] = useState<GameState>('idle');
-    const [stats, setStats] = useState<{ reward: number, steps: number }[]>([{ reward: 0, steps: 0 }]);
+    const [stats, setStats] = useState<{ reward: number, steps: number, penalties: number, episode: number }[]>([{ reward: 0, steps: 0, penalties: 0, episode: 0 }]);
     const [currentFrame, setCurrentFrame] = useState<string | null>(null);
+    const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [totalPenalties, setTotalPenalties] = useState(0);
     const wsRef = useRef<WebSocket | null>(null);
+    const logContainerRef = useRef<HTMLDivElement | null>(null);
 
     const connectWS = () => {
         // Prevent multiple connections
@@ -43,22 +57,31 @@ function App() {
                 setCurrentFrame(`data:image/jpeg;base64,${msg.data}`);
             } else if (msg.type === 'stats') {
                 setStats(prev => [...prev.slice(-99), msg.data]);
+                if (msg.data.penalties !== undefined) {
+                    setTotalPenalties(msg.data.penalties);
+                }
+            } else if (msg.type === 'log') {
+                const newLog: LogEntry = {
+                    message: msg.data.message,
+                    logType: msg.data.logType,
+                    step: msg.data.step,
+                    timestamp: new Date()
+                };
+                setLogs(prev => [...prev.slice(-199), newLog]);
             } else if (msg.type === 'info') {
                 console.log(`Info: ${msg.message}`);
             } else if (msg.type === 'error') {
                 console.error(`Backend Error: ${msg.message}`);
-                alert(`Error: ${msg.message}`); // Make it visible to user
+                alert(`Error: ${msg.message}`);
             }
         };
 
         ws.onclose = (event) => {
             console.log(`WS Disconnected (Code: ${event.code})`);
-            // Only handle if THIS is still the current websocket
             if (wsRef.current === ws) {
                 setIsConnected(false);
                 wsRef.current = null;
                 setGameState('stopped');
-                // Auto-reconnect
                 reconnectTimeoutRef.current = setTimeout(connectWS, 3000);
             } else {
                 console.log("Ignoring stale WS close event");
@@ -76,7 +99,6 @@ function App() {
         connectWS();
         return () => {
             if (wsRef.current) {
-                // Only close if open or connecting
                 if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
                     wsRef.current.close();
                 }
@@ -85,15 +107,20 @@ function App() {
         };
     }, []);
 
+    // Auto-scroll logs
+    useEffect(() => {
+        if (logContainerRef.current) {
+            logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+        }
+    }, [logs]);
+
     const handleStart = () => {
         console.log("Start button clicked!");
-        console.log("isConnected:", isConnected);
-        console.log("wsRef.current:", wsRef.current);
-        console.log("wsRef.current.readyState:", wsRef.current?.readyState);
-
         if (isConnected && wsRef.current) {
             console.log("Sending start message...");
             setStats([]);
+            setLogs([]);
+            setTotalPenalties(0);
             wsRef.current.send(JSON.stringify({
                 type: 'start',
                 gameId: selectedGame,
@@ -112,6 +139,44 @@ function App() {
             wsRef.current.send(JSON.stringify({ type: 'stop' }));
             setGameState('stopped');
         }
+    };
+
+    const getLogColor = (logType: string) => {
+        switch (logType) {
+            case 'action': return 'text-slate-300';
+            case 'reward': return 'text-emerald-400';
+            case 'penalty': return 'text-red-400';
+            case 'success': return 'text-green-400 font-bold';
+            case 'failure': return 'text-red-500 font-bold';
+            case 'info': return 'text-blue-400';
+            default: return 'text-slate-400';
+        }
+    };
+
+    const getLogIcon = (logType: string) => {
+        switch (logType) {
+            case 'penalty': return '⚠️';
+            case 'reward': return '🎁';
+            case 'success': return '🏆';
+            case 'failure': return '💀';
+            case 'info': return 'ℹ️';
+            default: return '→';
+        }
+    };
+
+    // Check if algorithm is compatible with selected game
+    const isAlgoCompatible = (algo: Algorithm, game: Game) => {
+        const isTabularGame = TABULAR_GAMES.includes(game);
+        const isTabularAlgo = ['DP', 'Q-Learning', 'SARSA'].includes(algo);
+
+        // DP requires environments with transition probabilities (P attribute)
+        // Blackjack doesn't expose P, so DP is not compatible
+        if (algo === 'DP' && game === 'Blackjack') return false;
+
+        // Tabular algorithms work with tabular games
+        // Deep algorithms (DQN, PG) work with all games
+        if (!isTabularAlgo) return true; // DQN/PG always compatible
+        return isTabularGame; // Tabular algos only work with tabular games
     };
 
     return (
@@ -144,17 +209,40 @@ function App() {
                             <Grid size={16} /> Environment
                         </h2>
                         <div className="space-y-2">
-                            {(['MsPacman', 'KungFuMaster', 'MiniWorld-Maze'] as Game[]).map(game => (
+                            {/* Tabular Games */}
+                            <p className="text-xs text-slate-500 mt-2 mb-1">Tabular Environments</p>
+                            {TABULAR_GAMES.map(game => (
                                 <button
                                     key={game}
                                     onClick={() => {
                                         setSelectedGame(game);
-                                        // Logic: If switching to Atari (Pacman/KungFu), switch to DQN if current is Tabular/DP
-                                        const isAtari = game !== 'MiniWorld-Maze';
-                                        if (isAtari && ['DP', 'Q-Learning', 'SARSA'].includes(selectedAlgo)) {
+                                        // Auto-select compatible algorithm
+                                        if (!isAlgoCompatible(selectedAlgo, game)) {
+                                            setSelectedAlgo('Q-Learning');
+                                        }
+                                    }}
+                                    className={cn(
+                                        "w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between group",
+                                        selectedGame === game
+                                            ? "bg-purple-600 text-white shadow-lg shadow-purple-900/20"
+                                            : "bg-slate-900/50 text-slate-400 hover:bg-slate-800 hover:text-white"
+                                    )}
+                                >
+                                    <span>{game}</span>
+                                    {selectedGame === game && <div className="w-2 h-2 bg-white rounded-full" />}
+                                </button>
+                            ))}
+                            {/* Visual Games */}
+                            <p className="text-xs text-slate-500 mt-4 mb-1">Visual Environments</p>
+                            {VISUAL_GAMES.map(game => (
+                                <button
+                                    key={game}
+                                    onClick={() => {
+                                        setSelectedGame(game);
+                                        // Force deep RL for visual games
+                                        if (['DP', 'Q-Learning', 'SARSA'].includes(selectedAlgo)) {
                                             setSelectedAlgo('DQN');
                                         }
-                                        // If switching to Maze, it supports all (using fallbacks), so no forced switch needed.
                                     }}
                                     className={cn(
                                         "w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between group",
@@ -177,21 +265,19 @@ function App() {
                         </h2>
                         <div className="space-y-2">
                             {(['DP', 'Q-Learning', 'SARSA', 'DQN', 'PG'] as Algorithm[]).map(algo => {
-                                const isAtari = selectedGame !== 'MiniWorld-Maze';
-                                const isDeep = ['DQN', 'PG'].includes(algo);
-                                const disabled = isAtari && !isDeep; // Disable Tabular/DP for Atari
+                                const compatible = isAlgoCompatible(algo, selectedGame);
 
                                 return (
                                     <button
                                         key={algo}
                                         onClick={() => setSelectedAlgo(algo)}
-                                        disabled={disabled}
+                                        disabled={!compatible}
                                         className={cn(
                                             "w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between",
                                             selectedAlgo === algo
                                                 ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
                                                 : "bg-slate-900/50 text-slate-400 hover:bg-slate-800 hover:text-white",
-                                            disabled && "opacity-40 cursor-not-allowed bg-slate-900/30 text-slate-600"
+                                            !compatible && "opacity-40 cursor-not-allowed bg-slate-900/30 text-slate-600"
                                         )}
                                     >
                                         <span>{algo}</span>
@@ -248,16 +334,20 @@ function App() {
                         {/* Overlay Stats */}
                         <div className="absolute top-4 right-4 flex gap-3">
                             <div className="px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur border border-white/10 text-xs font-mono text-emerald-400">
-                                FPS: 60
+                                Episode: {stats.length > 0 ? stats[stats.length - 1].episode || 0 : 0}
                             </div>
                             <div className="px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur border border-white/10 text-xs font-mono text-blue-400">
-                                Frames: {stats.length} {/* Approximate frame count via steps, or use new state */}
+                                Steps: {stats.length > 0 ? stats[stats.length - 1].steps || 0 : 0}
+                            </div>
+                            <div className="px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur border border-white/10 text-xs font-mono text-red-400">
+                                Penalties: {totalPenalties.toFixed(1)}
                             </div>
                         </div>
                     </div>
 
-                    {/* Metrics */}
+                    {/* Metrics & Logs Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Rewards Chart */}
                         <div className="p-6 rounded-2xl bg-slate-800/50 border border-slate-700/50 h-80">
                             <h3 className="text-slate-200 font-semibold mb-6 flex items-center gap-2">
                                 <Activity size={18} className="text-blue-400" /> Training Rewards
@@ -283,9 +373,12 @@ function App() {
                             </ResponsiveContainer>
                         </div>
 
+                        {/* Agent Status */}
                         <div className="p-6 rounded-2xl bg-slate-800/50 border border-slate-700/50 h-80">
-                            <h3 className="text-slate-200 font-semibold mb-4">Agent Status</h3>
-                            <div className="space-y-4">
+                            <h3 className="text-slate-200 font-semibold mb-4 flex items-center gap-2">
+                                <User size={18} className="text-purple-400" /> Agent Status
+                            </h3>
+                            <div className="space-y-3">
                                 <div className="flex justify-between items-center p-3 rounded-lg bg-slate-900/50 border border-slate-800">
                                     <span className="text-slate-400 text-sm">Status</span>
                                     <span className={cn("px-2 py-0.5 rounded text-xs font-bold uppercase",
@@ -297,17 +390,47 @@ function App() {
                                 <div className="flex justify-between items-center p-3 rounded-lg bg-slate-900/50 border border-slate-800">
                                     <span className="text-slate-400 text-sm">Total Steps</span>
                                     <span className="font-mono text-blue-400">
-                                        {stats.length > 0 ? stats[stats.length - 1].steps : 0}
+                                        {stats.length > 0 ? stats[stats.length - 1].steps || 0 : 0}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center p-3 rounded-lg bg-slate-900/50 border border-slate-800">
-                                    <span className="text-slate-400 text-sm">Last Reward</span>
+                                    <span className="text-slate-400 text-sm">Current Reward</span>
                                     <span className="font-mono text-purple-400">
-                                        {stats.length > 0 ? stats[stats.length - 1].reward.toFixed(2) : 0}
+                                        {stats.length > 0 ? (stats[stats.length - 1].reward || 0).toFixed(2) : 0}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center p-3 rounded-lg bg-slate-900/50 border border-red-900/30">
+                                    <span className="text-slate-400 text-sm flex items-center gap-1">
+                                        <AlertTriangle size={14} className="text-red-400" /> Total Penalties
+                                    </span>
+                                    <span className="font-mono text-red-400">
+                                        {totalPenalties.toFixed(1)}
                                     </span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
 
+                    {/* Agent Action Logs */}
+                    <div className="p-6 rounded-2xl bg-slate-800/50 border border-slate-700/50">
+                        <h3 className="text-slate-200 font-semibold mb-4 flex items-center gap-2">
+                            <ScrollText size={18} className="text-cyan-400" /> Agent Action Log
+                        </h3>
+                        <div
+                            ref={logContainerRef}
+                            className="h-48 overflow-y-auto bg-slate-900/70 rounded-xl p-4 font-mono text-sm space-y-1 border border-slate-800"
+                        >
+                            {logs.length === 0 ? (
+                                <p className="text-slate-500 text-center py-8">Start training to see agent actions...</p>
+                            ) : (
+                                logs.map((log, idx) => (
+                                    <div key={idx} className={cn("flex items-start gap-2", getLogColor(log.logType))}>
+                                        <span className="text-slate-600 w-16 shrink-0">[{log.step}]</span>
+                                        <span className="w-5">{getLogIcon(log.logType)}</span>
+                                        <span>{log.message}</span>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>
@@ -317,3 +440,4 @@ function App() {
 }
 
 export default App;
+
