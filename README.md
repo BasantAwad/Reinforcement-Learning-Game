@@ -1,28 +1,26 @@
-# RL Arena - Reinforcement Learning Visualization Platform
+# RL Arena - Tabular Reinforcement Learning Platform
 
-A web-based platform for visualizing and running RL agents on classic game environments.
+A web-based platform for visualizing and training RL agents using tabular methods on classic game environments.
 
-![RL Arena](https://img.shields.io/badge/RL-Arena-purple) ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![React](https://img.shields.io/badge/React-18-cyan) ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
+![RL Arena](https://img.shields.io/badge/RL-Arena-purple) ![Python](https://img.shields.io/badge/Python-3.10+-blue) ![React](https://img.shields.io/badge/React-18-cyan)
 
 ## 🎮 Features
 
-- **Multiple Environments**: 
-  - **Tabular**: Taxi, Blackjack, FrozenLake, **Jungle Dash** (custom Pygame)
-  - **Visual**: MsPacman, KungFuMaster, MiniWorld-Maze
-- **RL Algorithms**: 
-  - Dynamic Programming (Value Iteration)
-  - Q-Learning (Off-Policy TD)
-  - SARSA (On-Policy TD)
-  - DQN (Deep Q-Network)
-  - Policy Gradient (Actor-Critic)
+- **4 Game Environments**: Taxi, Blackjack, FrozenLake, Jungle Dash (custom Pygame game)
+- **3 RL Algorithms**:
+  - **Dynamic Programming** (Value Iteration)
+  - **Q-Learning** (Off-Policy TD Control)
+  - **SARSA** (On-Policy TD Control)
 - **Real-time Visualization**: Live game frames streamed via WebSocket
 - **Training Metrics**: Interactive charts showing rewards, penalties, and progress
 - **Agent Action Logs**: Real-time color-coded logs showing agent decisions
-- **Custom Game**: Jungle Dash - 2D grid game with sprite-based graphics
+
+---
 
 ## 🚀 Quick Start
 
 ### Backend
+
 ```bash
 cd Reinforcement-Learning-Game
 pip install -r backend/requirements.txt
@@ -30,6 +28,7 @@ uvicorn backend.main:app --reload --port 8000
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
 npm install
@@ -38,66 +37,65 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
-## 🎯 Supported Games & Algorithms
-
-| Game | Type | DP | Q-Learning | SARSA | DQN | PG |
-|------|------|:--:|:----------:|:-----:|:---:|:--:|
-| Taxi | Tabular | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Blackjack | Tabular | ❌ | ✅ | ✅ | ✅ | ✅ |
-| FrozenLake | Tabular | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Jungle Dash** | Tabular | ✅ | ✅ | ✅ | ✅ | ✅ |
-| MsPacman | Visual | ❌ | ❌ | ❌ | ✅ | ✅ |
-| KungFuMaster | Visual | ❌ | ❌ | ❌ | ✅ | ✅ |
-| MiniWorld-Maze | Visual | ❌ | ❌ | ❌ | ✅ | ✅ |
+---
 
 ## 📁 Project Structure
 
 ```
 Reinforcement-Learning-Game/
-├── backend/              # Python FastAPI backend
-│   ├── agents/           # RL agent implementations
-│   │   ├── dqn.py        # Deep Q-Network
-│   │   ├── policy_gradient.py  # Actor-Critic
-│   │   └── tabular.py    # Q-Learning, SARSA, DP
-│   ├── envs/             # Environment wrappers
-│   │   ├── wrappers.py   # Frame preprocessing
-│   │   └── jungle_dash.py # Custom game
-│   ├── main.py           # FastAPI entry point
-│   └── training.py       # Training orchestration
-├── frontend/             # React TypeScript frontend
-│   └── src/App.tsx       # Main application
-├── 1 Pink_Monster/       # Game sprites
-│   ├── Pink_Monster.png  # Agent sprite
-│   ├── Rock1.png         # Obstacle sprite
-│   └── Rock2.png         # Obstacle sprite
-└── DOCUMENTATION.md      # Complete documentation
+├── backend/                  # Python FastAPI backend
+│   ├── agents/               # RL AGENT IMPLEMENTATIONS
+│   │   ├── base_agent.py     # Base agent class
+│   │   └── tabular.py        # Q-Learning, SARSA, DP agents
+│   ├── envs/                 # GAME ENVIRONMENTS
+│   │   └── jungle_dash.py    # Custom Pygame game (JungleDash)
+│   ├── main.py               # FastAPI WebSocket server
+│   └── training.py           # Training orchestration
+├── frontend/                 # React TypeScript frontend
+│   └── src/App.tsx           # Main UI application
+├── 1 Pink_Monster/           # Game sprites for JungleDash
+└── README.md
 ```
 
-## 📖 Documentation
+### Where is the Code?
 
-See [DOCUMENTATION.md](./DOCUMENTATION.md) for comprehensive documentation including:
-- Architecture overview
-- Class-level documentation
-- File-level documentation
-- Requirement mapping
-- Developer instructions
+| Component            | Location                      | Description                           |
+| -------------------- | ----------------------------- | ------------------------------------- |
+| **Agent Algorithms** | `backend/agents/tabular.py`   | Q-Learning, SARSA, DP implementations |
+| **Custom Game**      | `backend/envs/jungle_dash.py` | JungleDash Pygame environment         |
+| **Training Loop**    | `backend/training.py`         | WebSocket training orchestration      |
+| **UI**               | `frontend/src/App.tsx`        | React game selection & visualization  |
+
+---
+
+## 🎯 Supported Games & Algorithms
+
+| Game            | Type          |  DP  | Q-Learning | SARSA |
+| --------------- | ------------- | :--: | :--------: | :---: |
+| Taxi            | Gymnasium     |  ✅  |     ✅     |  ✅   |
+| Blackjack       | Gymnasium     | ❌\* |     ✅     |  ✅   |
+| FrozenLake      | Gymnasium     |  ✅  |     ✅     |  ✅   |
+| **Jungle Dash** | Custom Pygame |  ✅  |     ✅     |  ✅   |
+
+\*Blackjack doesn't expose transition probabilities, so DP is not compatible.
+
+---
 
 ## 🛠️ Technologies
 
 - **Frontend**: React, TypeScript, TailwindCSS, Recharts, Vite
-- **Backend**: Python, FastAPI, WebSockets, PyTorch, Pygame
-- **RL**: Gymnasium, ALE-py (Atari), MiniWorld
+- **Backend**: Python, FastAPI, WebSockets, Pygame
+- **RL**: Gymnasium (Taxi, Blackjack, FrozenLake)
+
+---
 
 ## 📝 Course
 
 AIE322 - Advanced Machine Learning Final Project
 
-**Project Requirements Satisfied**:
+**Requirements Satisfied**:
+
 - ✅ Design a 2D game using Python (Jungle Dash with Pygame)
-- ✅ Implement RL algorithms from scratch (DP, Q-Learning, SARSA, DQN, PG)
+- ✅ Implement RL algorithms from scratch (DP, Q-Learning, SARSA)
 - ✅ Provide visualization tools for agent performance
 - ✅ Compare algorithm performance with metrics and graphs
-
----
-
-*Built with ❤️ for reinforcement learning education*

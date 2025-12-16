@@ -4,11 +4,7 @@ import base64
 import cv2
 import json
 import asyncio
-import ale_py # Register Atari Envs
-from .agents.dqn import DQNAgent
-from .agents.policy_gradient import PolicyGradientAgent
 from .agents.tabular import TabularQLearningAgent, SARSAAgent, DynamicProgrammingAgent
-from .envs.wrappers import ResizeAndGrayscale, FrameStack
 from .envs.jungle_dash import JungleDashEnv, register_jungle_dash
 
 # Register custom environments
@@ -20,9 +16,6 @@ ACTION_NAMES = {
     "FrozenLake": {0: "Left", 1: "Down", 2: "Right", 3: "Up"},
     "Blackjack": {0: "Stand", 1: "Hit"},
     "JungleDash": {0: "Up", 1: "Down", 2: "Left", 3: "Right"},
-    "MsPacman": {0: "NOOP", 1: "Up", 2: "Right", 3: "Left", 4: "Down"},
-    "KungFuMaster": {0: "NOOP", 1: "Up", 2: "Right", 3: "Left", 4: "Down", 5: "Fire"},
-    "MiniWorld-Maze": {0: "Left", 1: "Right", 2: "Forward"}
 }
 
 class BlackjackObsWrapper(gym.ObservationWrapper):
@@ -75,85 +68,40 @@ class TrainingManager:
         try:
             # Create Env
             print(f"Attempting to create game: {game_id}")
-            env_id = None
             render_mode = "rgb_array"
             
-            # Set environment ID based on game selection
-            if game_id == "MiniWorld-Maze":
-                try:
-                    import miniworld
-                except ImportError as e:
-                    await websocket.send_json({"type": "error", "message": f"MiniWorld Module Missing: {e}"})
-                    raise e
-                env_id = "MiniWorld-Maze-v0"
-            elif game_id == "MsPacman":
-                env_id = "ALE/MsPacman-v5"
-            elif game_id == "KungFuMaster":
-                env_id = "ALE/KungFuMaster-v5"
-            elif game_id == "Taxi":
-                env_id = "Taxi-v3"
-            elif game_id == "Blackjack":
-                env_id = "Blackjack-v1"
-            elif game_id == "FrozenLake":
-                env_id = "FrozenLake-v1"
-            elif game_id == "JungleDash":
-                env_id = "JungleDash-v0"
-                
             try:
-                # Create environment based on game type
-                if game_id == "MiniWorld-Maze":
-                    self.env = gym.make("MiniWorld-Maze-v0", render_mode="rgb_array")
-                elif game_id in ["MsPacman", "KungFuMaster"]:
-                    self.env = gym.make(env_id, render_mode=render_mode, frameskip=4)
-                elif game_id == "FrozenLake":
-                    self.env = gym.make(env_id, render_mode=render_mode, is_slippery=False)
+                # Create environment based on game type (tabular games only)
+                if game_id == "Taxi":
+                    self.env = gym.make("Taxi-v3", render_mode=render_mode)
                 elif game_id == "Blackjack":
-                    self.env = gym.make(env_id, render_mode=render_mode)
+                    self.env = gym.make("Blackjack-v1", render_mode=render_mode)
                     self.env = BlackjackObsWrapper(self.env)
-                elif game_id == "Taxi":
-                    self.env = gym.make(env_id, render_mode=render_mode)
+                elif game_id == "FrozenLake":
+                    self.env = gym.make("FrozenLake-v1", render_mode=render_mode, is_slippery=False)
                 elif game_id == "JungleDash":
                     self.env = JungleDashEnv(render_mode=render_mode)
                 else:
-                    self.env = gym.make(env_id, render_mode=render_mode)
+                    # Default to FrozenLake
+                    await websocket.send_json({"type": "error", "message": f"Unknown game: {game_id}"})
+                    self.env = gym.make("FrozenLake-v1", render_mode=render_mode, is_slippery=False)
+                    self.current_game_id = "FrozenLake"
                 
-                print(f"Env Created Successfully: {env_id}")
+                print(f"Env Created Successfully: {game_id}")
                 await self.send_log(websocket, f"Environment {game_id} initialized", "info")
             except Exception as e:
-                err_msg = f"Environment {env_id} creation failed: {str(e)}"
+                err_msg = f"Environment {game_id} creation failed: {str(e)}"
                 print(err_msg)
                 await websocket.send_json({"type": "error", "message": err_msg})
                 print(f"Fallback to FrozenLake.")
                 self.env = gym.make("FrozenLake-v1", render_mode="rgb_array", is_slippery=False)
                 self.current_game_id = "FrozenLake"
-            
-            # Apply wrappers for visual environments
-            if game_id == "MiniWorld-Maze":
-                self.env = ResizeAndGrayscale(self.env)
-            elif game_id in ["MsPacman", "KungFuMaster"]:
-                self.env = ResizeAndGrayscale(self.env)
-                self.env = FrameStack(self.env, 4)
                 
             print("Resetting Env...")
             obs, _ = self.env.reset()
             print("Env Reset Configured.")
-            
-            # Determine input_shape and is_visual
-            is_visual = False
-            if game_id in ["MsPacman", "KungFuMaster"]:
-                input_shape = (4, 84, 84)
-                is_visual = True
-            elif game_id == "MiniWorld-Maze":
-                input_shape = (1, 84, 84)
-                is_visual = True
-            elif game_id in ["Taxi", "FrozenLake", "Blackjack", "JungleDash"]:
-                input_shape = self.env.observation_space.shape if hasattr(self.env.observation_space, 'shape') else ()
-                is_visual = False
-            else:
-                input_shape = self.env.observation_space.shape if hasattr(self.env.observation_space, 'shape') else ()
-                is_visual = False
 
-            self.init_agent(algo_id, self.env.action_space.n, input_shape, is_visual)
+            self.init_agent(algo_id, self.env.action_space.n)
             print("Agent Initialized.")
             await self.send_log(websocket, f"Agent ({algo_id}) initialized and ready", "info")
             
@@ -256,31 +204,21 @@ class TrainingManager:
                 self.running = False
                 break
 
-    def init_agent(self, algo_id, n_actions, input_shape, is_visual):
+    def init_agent(self, algo_id, n_actions):
+        """Initialize agent based on selected algorithm (tabular only)."""
         action_space = self.env.action_space
-        if algo_id == "DQN":
-            self.agent = DQNAgent(input_shape, action_space)
-        elif algo_id == "PG":
-            self.agent = PolicyGradientAgent(input_shape, action_space)
-        elif algo_id == "Q-Learning":
-            if hasattr(self.env.observation_space, 'n'):
-                self.agent = TabularQLearningAgent(action_space, state_space_size=self.env.observation_space.n)
-            else:
-                print("WARNING: Q-Learning selected for Visual Box space. Switching to DQN.")
-                self.agent = DQNAgent(input_shape, action_space)
-        elif algo_id == "DP":
-            if hasattr(self.env.observation_space, 'n'):
-                self.agent = DynamicProgrammingAgent(self.env)
-                self.agent.value_iteration()
-            else:
-                raise ValueError("Dynamic Programming requires discrete state space. Visual envs not supported.")
+        state_space_size = self.env.observation_space.n
+        
+        if algo_id == "Q-Learning":
+            self.agent = TabularQLearningAgent(action_space, state_space_size=state_space_size)
         elif algo_id == "SARSA":
-            if hasattr(self.env.observation_space, 'n'):
-                # Use proper SARSAAgent with on-policy updates
-                self.agent = SARSAAgent(action_space, state_space_size=self.env.observation_space.n)
-            else:
-                print("WARNING: SARSA selected for Visual Box space. Switching to DQN.")
-                self.agent = DQNAgent(input_shape, action_space)
+            self.agent = SARSAAgent(action_space, state_space_size=state_space_size)
+        elif algo_id == "DP":
+            self.agent = DynamicProgrammingAgent(self.env)
+            self.agent.value_iteration()
+        else:
+            # Default to Q-Learning
+            self.agent = TabularQLearningAgent(action_space, state_space_size=state_space_size)
 
     def stop(self):
         self.running = False

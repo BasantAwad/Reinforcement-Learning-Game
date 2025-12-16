@@ -9,8 +9,8 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // Types
-type Game = 'MsPacman' | 'KungFuMaster' | 'MiniWorld-Maze' | 'Taxi' | 'Blackjack' | 'FrozenLake' | 'JungleDash';
-type Algorithm = 'DP' | 'Q-Learning' | 'SARSA' | 'DQN' | 'PG';
+type Game = 'Taxi' | 'Blackjack' | 'FrozenLake' | 'JungleDash';
+type Algorithm = 'DP' | 'Q-Learning' | 'SARSA';
 type GameState = 'idle' | 'running' | 'stopped';
 
 interface LogEntry {
@@ -20,9 +20,8 @@ interface LogEntry {
     timestamp: Date;
 }
 
-// Game categories
-const TABULAR_GAMES: Game[] = ['Taxi', 'Blackjack', 'FrozenLake', 'JungleDash'];
-const VISUAL_GAMES: Game[] = ['MsPacman', 'KungFuMaster', 'MiniWorld-Maze'];
+// Available games (tabular environments only)
+const GAMES: Game[] = ['Taxi', 'Blackjack', 'FrozenLake', 'JungleDash'];
 
 // Main App Component
 function App() {
@@ -166,17 +165,10 @@ function App() {
 
     // Check if algorithm is compatible with selected game
     const isAlgoCompatible = (algo: Algorithm, game: Game) => {
-        const isTabularGame = TABULAR_GAMES.includes(game);
-        const isTabularAlgo = ['DP', 'Q-Learning', 'SARSA'].includes(algo);
-
         // DP requires environments with transition probabilities (P attribute)
         // Blackjack doesn't expose P, so DP is not compatible
         if (algo === 'DP' && game === 'Blackjack') return false;
-
-        // Tabular algorithms work with tabular games
-        // Deep algorithms (DQN, PG) work with all games
-        if (!isTabularAlgo) return true; // DQN/PG always compatible
-        return isTabularGame; // Tabular algos only work with tabular games
+        return true;
     };
 
     return (
@@ -209,9 +201,7 @@ function App() {
                             <Grid size={16} /> Environment
                         </h2>
                         <div className="space-y-2">
-                            {/* Tabular Games */}
-                            <p className="text-xs text-slate-500 mt-2 mb-1">Tabular Environments</p>
-                            {TABULAR_GAMES.map(game => (
+                            {GAMES.map(game => (
                                 <button
                                     key={game}
                                     onClick={() => {
@@ -219,29 +209,6 @@ function App() {
                                         // Auto-select compatible algorithm
                                         if (!isAlgoCompatible(selectedAlgo, game)) {
                                             setSelectedAlgo('Q-Learning');
-                                        }
-                                    }}
-                                    className={cn(
-                                        "w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between group",
-                                        selectedGame === game
-                                            ? "bg-purple-600 text-white shadow-lg shadow-purple-900/20"
-                                            : "bg-slate-900/50 text-slate-400 hover:bg-slate-800 hover:text-white"
-                                    )}
-                                >
-                                    <span>{game}</span>
-                                    {selectedGame === game && <div className="w-2 h-2 bg-white rounded-full" />}
-                                </button>
-                            ))}
-                            {/* Visual Games */}
-                            <p className="text-xs text-slate-500 mt-4 mb-1">Visual Environments</p>
-                            {VISUAL_GAMES.map(game => (
-                                <button
-                                    key={game}
-                                    onClick={() => {
-                                        setSelectedGame(game);
-                                        // Force deep RL for visual games
-                                        if (['DP', 'Q-Learning', 'SARSA'].includes(selectedAlgo)) {
-                                            setSelectedAlgo('DQN');
                                         }
                                     }}
                                     className={cn(
@@ -264,7 +231,7 @@ function App() {
                             <Zap size={16} /> Algorithm
                         </h2>
                         <div className="space-y-2">
-                            {(['DP', 'Q-Learning', 'SARSA', 'DQN', 'PG'] as Algorithm[]).map(algo => {
+                            {(['DP', 'Q-Learning', 'SARSA'] as Algorithm[]).map(algo => {
                                 const compatible = isAlgoCompatible(algo, selectedGame);
 
                                 return (
