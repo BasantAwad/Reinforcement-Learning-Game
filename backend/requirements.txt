@@ -6,5 +6,4 @@ torch
 numpy
 opencv-python
 ale-py
-# box2d # Removed to avoid build errors on Windows
-# swig # Removed
+

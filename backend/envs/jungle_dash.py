@@ -83,15 +83,33 @@ class JungleDashEnv(gym.Env):
             "1 Pink_Monster"
         )
         
-        # Colors (fallback when sprites not available)
+        # Colors for jungle platformer theme
         self.colors = {
-            'background': (34, 139, 34),      # Forest Green
-            'grid_line': (25, 100, 25),       # Darker green
+            # Sky
+            'sky_top': (135, 206, 235),       # Light sky blue
+            'sky_bottom': (200, 235, 255),    # Pale blue/white at horizon
+            'sun': (255, 236, 139),           # Warm yellow
+            'sun_glow': (255, 250, 200),      # Lighter glow
+            # Mountains
+            'mountain_back': (60, 120, 80),   # Dark green
+            'mountain_mid': (80, 160, 100),   # Medium green
+            'mountain_front': (100, 180, 120),# Light green
+            # Platforms & ground
+            'grass_top': (34, 180, 34),       # Bright grass green
+            'grass_dark': (25, 140, 25),      # Dark grass
+            'platform': (101, 67, 33),        # Brown platform
+            'platform_dark': (70, 45, 20),    # Dark brown
+            # Water
+            'water': (64, 164, 223),          # Blue water
+            'water_light': (100, 200, 255),   # Light water ripple
+            # Game elements
             'agent': (255, 105, 180),         # Pink
-            'obstacle': (101, 67, 33),        # Brown
+            'obstacle': (139, 90, 43),        # Brown brick
+            'obstacle_dark': (100, 60, 30),   # Dark brick
             'reward': (255, 215, 0),          # Gold
+            'reward_shine': (255, 250, 150),  # Gold shine
             'goal': (0, 255, 255),            # Cyan
-            'trap': (139, 69, 19),            # Saddle brown
+            'trap': (60, 40, 20),             # Dark pit
             'text': (255, 255, 255),          # White
         }
         
@@ -254,7 +272,7 @@ class JungleDashEnv(gym.Env):
                 if cell_type == self.OBSTACLE:
                     # Blocked by obstacle, stay in place
                     next_state = state
-                    reward = -1.0
+                    reward = -5.0  # Penalty for hitting obstacle
                     done = False
                 elif cell_type == self.GOAL:
                     next_state = new_row * self.grid_size + new_col
@@ -272,7 +290,7 @@ class JungleDashEnv(gym.Env):
                 else:
                     # Empty cell
                     next_state = new_row * self.grid_size + new_col
-                    reward = -0.1
+                    reward = 0.0  # No penalty for regular movement
                     done = False
                 
                 # P[s][a] = [(prob, next_state, reward, done)]
@@ -305,7 +323,7 @@ class JungleDashEnv(gym.Env):
         
         # Check if movement is blocked by obstacle
         if self.grid[new_pos[0], new_pos[1]] == self.OBSTACLE:
-            reward = -1
+            reward = -5  # Penalty for hitting obstacle
             terminated = False
             truncated = False
         else:
@@ -327,7 +345,7 @@ class JungleDashEnv(gym.Env):
                 terminated = True
                 truncated = False
             else:
-                reward = -0.1
+                reward = 0  # No penalty for regular movement
                 terminated = False
                 truncated = False
         
@@ -338,7 +356,7 @@ class JungleDashEnv(gym.Env):
         return self._get_obs(), reward, terminated, truncated, self._get_info()
     
     def render(self):
-        """Render the current state of the environment."""
+        """Render the current state of the environment with jungle platformer visuals."""
         if self.render_mode is None:
             return None
         
@@ -360,106 +378,186 @@ class JungleDashEnv(gym.Env):
         
         # Create surface
         canvas = pygame.Surface((self.window_size, self.window_size))
-        canvas.fill(self.colors['background'])
         
-        # Draw grid lines
-        for i in range(self.grid_size + 1):
-            pygame.draw.line(
-                canvas,
-                self.colors['grid_line'],
-                (0, i * self.cell_size),
-                (self.window_size, i * self.cell_size),
-                2
-            )
-            pygame.draw.line(
-                canvas,
-                self.colors['grid_line'],
-                (i * self.cell_size, 0),
-                (i * self.cell_size, self.window_size),
-                2
-            )
+        # === DRAW SKY GRADIENT BACKGROUND ===
+        for y in range(self.window_size):
+            # Interpolate between sky_top and sky_bottom
+            ratio = y / self.window_size
+            r = int(self.colors['sky_top'][0] * (1 - ratio) + self.colors['sky_bottom'][0] * ratio)
+            g = int(self.colors['sky_top'][1] * (1 - ratio) + self.colors['sky_bottom'][1] * ratio)
+            b = int(self.colors['sky_top'][2] * (1 - ratio) + self.colors['sky_bottom'][2] * ratio)
+            pygame.draw.line(canvas, (r, g, b), (0, y), (self.window_size, y))
         
-        # Draw cells
+        # === DRAW SUN ===
+        sun_x = self.window_size - 70
+        sun_y = 60
+        # Sun glow
+        pygame.draw.circle(canvas, self.colors['sun_glow'], (sun_x, sun_y), 45)
+        # Sun core
+        pygame.draw.circle(canvas, self.colors['sun'], (sun_x, sun_y), 35)
+        # Sun rays
+        for angle in range(0, 360, 30):
+            import math
+            rad = math.radians(angle)
+            x1 = sun_x + int(40 * math.cos(rad))
+            y1 = sun_y + int(40 * math.sin(rad))
+            x2 = sun_x + int(55 * math.cos(rad))
+            y2 = sun_y + int(55 * math.sin(rad))
+            pygame.draw.line(canvas, self.colors['sun'], (x1, y1), (x2, y2), 3)
+        
+        # === DRAW MOUNTAINS (back to front) ===
+        mountain_base_y = self.window_size // 2 + 40
+        
+        # Back mountains (darkest)
+        points_back = [(0, mountain_base_y)]
+        for x in range(0, self.window_size + 50, 80):
+            peak_height = mountain_base_y - 80 - (x % 60)
+            points_back.append((x, peak_height))
+        points_back.append((self.window_size, mountain_base_y))
+        pygame.draw.polygon(canvas, self.colors['mountain_back'], points_back)
+        
+        # Mid mountains
+        points_mid = [(0, mountain_base_y + 20)]
+        for x in range(0, self.window_size + 40, 60):
+            peak_height = mountain_base_y - 40 - (x % 50)
+            points_mid.append((x + 30, peak_height))
+        points_mid.append((self.window_size, mountain_base_y + 20))
+        pygame.draw.polygon(canvas, self.colors['mountain_mid'], points_mid)
+        
+        # Front mountains (lightest)
+        points_front = [(0, mountain_base_y + 40)]
+        for x in range(0, self.window_size + 30, 50):
+            peak_height = mountain_base_y + 10 - (x % 40)
+            points_front.append((x + 20, peak_height))
+        points_front.append((self.window_size, mountain_base_y + 40))
+        pygame.draw.polygon(canvas, self.colors['mountain_front'], points_front)
+        
+        # === DRAW WATER AT BOTTOM ===
+        water_height = self.cell_size  # Bottom row becomes water
+        water_y = self.window_size - water_height
+        pygame.draw.rect(canvas, self.colors['water'], (0, water_y, self.window_size, water_height))
+        # Water ripples
+        for i in range(4):
+            ripple_y = water_y + 10 + i * 15
+            pygame.draw.line(canvas, self.colors['water_light'], (20 + i * 30, ripple_y), 
+                           (80 + i * 30, ripple_y), 2)
+        
+        # === DRAW GRASS PLATFORMS (ground layer) ===
+        # Draw a ground platform covering the bottom portion
+        ground_y = self.window_size - water_height - 20
+        # Left ground platform
+        pygame.draw.rect(canvas, self.colors['platform'], (0, ground_y, 180, 40))
+        pygame.draw.rect(canvas, self.colors['grass_top'], (0, ground_y - 8, 180, 12))
+        # Right ground platform
+        pygame.draw.rect(canvas, self.colors['platform'], (self.window_size - 180, ground_y, 180, 40))
+        pygame.draw.rect(canvas, self.colors['grass_top'], (self.window_size - 180, ground_y - 8, 180, 12))
+        
+        # === DRAW GRID CELLS AS FLOATING PLATFORMS ===
         for row in range(self.grid_size):
             for col in range(self.grid_size):
                 cell = self.grid[row, col]
-                x = col * self.cell_size + 4
-                y = row * self.cell_size + 4
+                cell_x = col * self.cell_size
+                cell_y = row * self.cell_size
+                
+                # Draw subtle platform for empty cells (except water row)
+                if row < self.grid_size - 1:  # Not water row
+                    # Subtle cell indicator
+                    pygame.draw.rect(canvas, (255, 255, 255, 30), 
+                                   (cell_x + 2, cell_y + 2, self.cell_size - 4, self.cell_size - 4), 1)
                 
                 if cell == self.OBSTACLE:
+                    # Draw brick/stone obstacle block
+                    x = cell_x + 4
+                    y = cell_y + 4
+                    block_w = self.cell_size - 8
+                    block_h = self.cell_size - 8
+                    
                     # Use rock sprite if available
-                    rock_idx = (row + col) % 2  # Alternate between rock1 and rock2
+                    rock_idx = (row + col) % 2
                     rock_key = f'rock{rock_idx + 1}'
                     if rock_key in self.sprites:
                         canvas.blit(self.sprites[rock_key], (x, y))
                     elif 'rock1' in self.sprites:
                         canvas.blit(self.sprites['rock1'], (x, y))
                     else:
-                        # Fallback to drawing shapes
-                        pygame.draw.rect(
-                            canvas,
-                            self.colors['obstacle'],
-                            (x, y, self.cell_size - 8, self.cell_size - 8),
-                            border_radius=8
-                        )
+                        # Draw brick block
+                        pygame.draw.rect(canvas, self.colors['obstacle'], (x, y, block_w, block_h), border_radius=4)
+                        # Brick pattern
+                        pygame.draw.line(canvas, self.colors['obstacle_dark'], (x, y + block_h//3), (x + block_w, y + block_h//3), 2)
+                        pygame.draw.line(canvas, self.colors['obstacle_dark'], (x, y + 2*block_h//3), (x + block_w, y + 2*block_h//3), 2)
+                        pygame.draw.line(canvas, self.colors['obstacle_dark'], (x + block_w//2, y), (x + block_w//2, y + block_h//3), 2)
+                        pygame.draw.line(canvas, self.colors['obstacle_dark'], (x + block_w//4, y + block_h//3), (x + block_w//4, y + 2*block_h//3), 2)
+                        pygame.draw.line(canvas, self.colors['obstacle_dark'], (x + 3*block_w//4, y + block_h//3), (x + 3*block_w//4, y + 2*block_h//3), 2)
                         
                 elif cell == self.REWARD:
-                    # Draw coin/reward
-                    center_x = col * self.cell_size + self.cell_size // 2
-                    center_y = row * self.cell_size + self.cell_size // 2
+                    # Draw shiny coin
+                    center_x = cell_x + self.cell_size // 2
+                    center_y = cell_y + self.cell_size // 2
+                    # Outer glow
+                    pygame.draw.circle(canvas, self.colors['reward_shine'], (center_x, center_y), 22)
+                    # Main coin
                     pygame.draw.circle(canvas, self.colors['reward'], (center_x, center_y), 18)
-                    pygame.draw.circle(canvas, (255, 180, 0), (center_x, center_y), 12)
-                    # Dollar sign
-                    if self.font is None:
-                        try:
-                            self.font = pygame.font.Font(None, 24)
-                        except:
-                            pass
-                    if self.font:
-                        text = self.font.render("$", True, (139, 90, 0))
-                        text_rect = text.get_rect(center=(center_x, center_y))
-                        canvas.blit(text, text_rect)
+                    # Inner shine
+                    pygame.draw.circle(canvas, (255, 240, 100), (center_x - 4, center_y - 4), 6)
+                    # Star/sparkle effect
+                    pygame.draw.line(canvas, (255, 255, 255), (center_x, center_y - 24), (center_x, center_y - 18), 2)
+                    pygame.draw.line(canvas, (255, 255, 255), (center_x - 16, center_y - 16), (center_x - 12, center_y - 12), 2)
                         
                 elif cell == self.GOAL:
                     # Draw treasure chest
-                    chest_x = col * self.cell_size + 8
-                    chest_y = row * self.cell_size + 16
-                    # Chest body
-                    pygame.draw.rect(canvas, (139, 69, 19), (chest_x, chest_y + 10, 48, 30), border_radius=4)
-                    # Chest lid
+                    chest_x = cell_x + 8
+                    chest_y = cell_y + 12
+                    # Chest body (brown)
+                    pygame.draw.rect(canvas, (139, 69, 19), (chest_x, chest_y + 15, 48, 35), border_radius=4)
+                    pygame.draw.rect(canvas, (100, 50, 15), (chest_x + 2, chest_y + 20, 44, 25), border_radius=2)
+                    # Chest lid (open, showing gold)
                     pygame.draw.rect(canvas, (160, 82, 45), (chest_x - 2, chest_y, 52, 18), border_radius=6)
-                    # Gold inside
-                    pygame.draw.circle(canvas, self.colors['reward'], (chest_x + 24, chest_y + 8), 8)
-                    pygame.draw.circle(canvas, self.colors['reward'], (chest_x + 16, chest_y + 12), 6)
-                    pygame.draw.circle(canvas, self.colors['reward'], (chest_x + 32, chest_y + 12), 6)
+                    # Gold coins inside
+                    pygame.draw.circle(canvas, self.colors['reward'], (chest_x + 24, chest_y + 6), 10)
+                    pygame.draw.circle(canvas, self.colors['reward'], (chest_x + 14, chest_y + 10), 7)
+                    pygame.draw.circle(canvas, self.colors['reward'], (chest_x + 34, chest_y + 10), 7)
+                    # Sparkle
+                    pygame.draw.line(canvas, (255, 255, 255), (chest_x + 24, chest_y - 8), (chest_x + 24, chest_y - 2), 2)
+                    pygame.draw.line(canvas, (255, 255, 255), (chest_x + 20, chest_y - 5), (chest_x + 28, chest_y - 5), 2)
                     
                 elif cell == self.TRAP:
-                    # Draw pit/hole
-                    center_x = col * self.cell_size + self.cell_size // 2
-                    center_y = row * self.cell_size + self.cell_size // 2
-                    pygame.draw.ellipse(canvas, (60, 40, 20), 
-                        (col * self.cell_size + 8, row * self.cell_size + 12, 48, 40))
-                    pygame.draw.ellipse(canvas, (30, 20, 10), 
-                        (col * self.cell_size + 16, row * self.cell_size + 20, 32, 24))
+                    # Draw spiky pit trap
+                    trap_x = cell_x + 6
+                    trap_y = cell_y + 10
+                    trap_w = self.cell_size - 12
+                    trap_h = self.cell_size - 16
+                    # Dark pit
+                    pygame.draw.ellipse(canvas, self.colors['trap'], (trap_x, trap_y + 10, trap_w, trap_h - 10))
+                    pygame.draw.ellipse(canvas, (30, 20, 10), (trap_x + 8, trap_y + 18, trap_w - 16, trap_h - 24))
+                    # Spikes
+                    spike_color = (100, 100, 100)
+                    for i in range(5):
+                        sx = trap_x + 6 + i * 10
+                        pygame.draw.polygon(canvas, spike_color, [(sx, trap_y + 20), (sx + 5, trap_y + 8), (sx + 10, trap_y + 20)])
         
-        # Draw agent (Pink Monster)
+        # === DRAW AGENT (Pink Monster) ===
         agent_x = self.agent_pos[1] * self.cell_size + 4
         agent_y = self.agent_pos[0] * self.cell_size + 4
         
         if 'agent' in self.sprites:
             canvas.blit(self.sprites['agent'], (agent_x, agent_y))
         else:
-            # Fallback: Draw pink circle with face
+            # Fallback: Draw cute pink monster
             center_x = self.agent_pos[1] * self.cell_size + self.cell_size // 2
             center_y = self.agent_pos[0] * self.cell_size + self.cell_size // 2
+            # Body
             pygame.draw.circle(canvas, self.colors['agent'], (center_x, center_y), 24)
+            pygame.draw.circle(canvas, (255, 150, 200), (center_x, center_y), 20)
             # Eyes
-            pygame.draw.circle(canvas, (255, 255, 255), (center_x - 8, center_y - 6), 6)
-            pygame.draw.circle(canvas, (255, 255, 255), (center_x + 8, center_y - 6), 6)
-            pygame.draw.circle(canvas, (0, 0, 0), (center_x - 8, center_y - 6), 3)
-            pygame.draw.circle(canvas, (0, 0, 0), (center_x + 8, center_y - 6), 3)
-            # Mouth
-            pygame.draw.arc(canvas, (0, 0, 0), (center_x - 10, center_y - 4, 20, 16), 3.14, 0, 2)
+            pygame.draw.circle(canvas, (255, 255, 255), (center_x - 8, center_y - 6), 8)
+            pygame.draw.circle(canvas, (255, 255, 255), (center_x + 8, center_y - 6), 8)
+            pygame.draw.circle(canvas, (0, 0, 0), (center_x - 6, center_y - 6), 4)
+            pygame.draw.circle(canvas, (0, 0, 0), (center_x + 10, center_y - 6), 4)
+            # Eye shine
+            pygame.draw.circle(canvas, (255, 255, 255), (center_x - 5, center_y - 8), 2)
+            pygame.draw.circle(canvas, (255, 255, 255), (center_x + 11, center_y - 8), 2)
+            # Mouth (smile)
+            pygame.draw.arc(canvas, (0, 0, 0), (center_x - 10, center_y, 20, 12), 3.14, 0, 2)
         
         if self.render_mode == "human":
             self.window.blit(canvas, canvas.get_rect())
