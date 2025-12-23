@@ -46,16 +46,18 @@ class SARSAAgent(BaseAgent):
         - Q-Learning: Uses max Q(s',a') ← OFF-POLICY
     """
     
-    def __init__(self, action_space, state_space_size, alpha=0.1, gamma=0.99, epsilon=0.1):
+    def __init__(self, action_space, state_space_size, alpha=0.2, gamma=0.99, epsilon=0.9, epsilon_min=0.01, epsilon_decay=0.995):
         """
         Initialize SARSA agent.
         
         Args:
             action_space: Gymnasium action space
             state_space_size: Number of discrete states
-            alpha: Learning rate (0 < α ≤ 1)
+            alpha: Learning rate (0 < α ≤ 1) - higher for faster learning
             gamma: Discount factor (0 < γ ≤ 1)
-            epsilon: Exploration probability for ε-greedy
+            epsilon: Initial exploration probability (start high!)
+            epsilon_min: Minimum exploration rate
+            epsilon_decay: Epsilon decay rate per step
         """
         super().__init__(action_space)
         
@@ -63,9 +65,11 @@ class SARSAAgent(BaseAgent):
         self.q_table = np.zeros((state_space_size, action_space.n), dtype=np.float64)
         
         # Hyperparameters
-        self.alpha = alpha      # Learning rate
-        self.gamma = gamma      # Discount factor
-        self.epsilon = epsilon  # Exploration rate
+        self.alpha = alpha              # Learning rate (higher for small envs)
+        self.gamma = gamma              # Discount factor
+        self.epsilon = epsilon          # Current exploration rate
+        self.epsilon_min = epsilon_min  # Minimum exploration
+        self.epsilon_decay = epsilon_decay  # Decay rate
     
     def act(self, observation):
         """
@@ -114,6 +118,10 @@ class SARSAAgent(BaseAgent):
         current_q = self.q_table[state, action]
         target = reward + self.gamma * next_q
         self.q_table[state, action] = current_q + self.alpha * (target - current_q)
+        
+        # Decay epsilon after each step
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
     
     def save(self, path):
         """Save Q-table to file."""

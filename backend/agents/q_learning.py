@@ -43,16 +43,18 @@ class TabularQLearningAgent(BaseAgent):
         ε = exploration rate for ε-greedy policy
     """
     
-    def __init__(self, action_space, state_space_size, alpha=0.1, gamma=0.99, epsilon=0.1):
+    def __init__(self, action_space, state_space_size, alpha=0.2, gamma=0.99, epsilon=0.9, epsilon_min=0.01, epsilon_decay=0.995):
         """
         Initialize Q-Learning agent.
         
         Args:
             action_space: Gymnasium action space
             state_space_size: Number of discrete states
-            alpha: Learning rate (0 < α ≤ 1)
+            alpha: Learning rate (0 < α ≤ 1) - higher for faster learning
             gamma: Discount factor (0 < γ ≤ 1)
-            epsilon: Exploration probability for ε-greedy
+            epsilon: Initial exploration probability (start high!)
+            epsilon_min: Minimum exploration rate
+            epsilon_decay: Epsilon decay rate per step
         """
         super().__init__(action_space)
         
@@ -60,9 +62,11 @@ class TabularQLearningAgent(BaseAgent):
         self.q_table = np.zeros((state_space_size, action_space.n), dtype=np.float64)
         
         # Hyperparameters
-        self.alpha = alpha      # Learning rate
-        self.gamma = gamma      # Discount factor  
-        self.epsilon = epsilon  # Exploration rate
+        self.alpha = alpha              # Learning rate (higher for small envs)
+        self.gamma = gamma              # Discount factor  
+        self.epsilon = epsilon          # Current exploration rate
+        self.epsilon_min = epsilon_min  # Minimum exploration
+        self.epsilon_decay = epsilon_decay  # Decay rate
     
     def act(self, observation):
         """
@@ -88,7 +92,7 @@ class TabularQLearningAgent(BaseAgent):
     
     def step(self, state, action, reward, next_state, done):
         """
-        Update Q-table using Q-learning update rule.
+        Update Q-table using Q-learning update rule with epsilon decay.
         
         Q(s,a) ← Q(s,a) + α[r + γ max_a' Q(s',a') - Q(s,a)]
         
@@ -112,6 +116,10 @@ class TabularQLearningAgent(BaseAgent):
         
         # Q-learning update: Q(s,a) ← Q(s,a) + α[target - Q(s,a)]
         self.q_table[state, action] = current_q + self.alpha * (target - current_q)
+        
+        # Decay epsilon after each step for gradual shift from exploration to exploitation
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
     
     def save(self, path):
         """Save Q-table to file."""
