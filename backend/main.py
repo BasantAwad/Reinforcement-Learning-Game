@@ -1,8 +1,12 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import asyncio
 import json
+import os
 from .training import TrainingManager
+from .metrics import metrics_tracker
+from .report_generator import generate_markdown_report
 
 app = FastAPI()
 
@@ -24,6 +28,33 @@ def read_root():
 async def startup_event():
     print(">>> BACKEND STARTED: FIXED VERSION - READY FOR CONNECTIONS <<<")
 
+@app.get("/api/metrics")
+def get_metrics():
+    """Get all tracked metrics."""
+    return metrics_tracker.get_comparison()
+
+@app.get("/api/metrics/export")
+def export_metrics():
+    """Export metrics to JSON file."""
+    filepath = "metrics_export.json"
+    metrics_tracker.export_to_json(filepath)
+    return {"message": f"Metrics exported to {filepath}"}
+
+@app.get("/api/report/generate")
+def generate_report():
+    """Generate markdown report for analysis."""
+    comparison = metrics_tracker.get_comparison()
+    filepath = generate_markdown_report(comparison)
+    return {"message": f"Report generated: {filepath}", "filepath": filepath}
+
+@app.get("/api/report/download")
+def download_report():
+    """Download the generated markdown report."""
+    filepath = "RL_ANALYSIS_REPORT.md"
+    if os.path.exists(filepath):
+        return FileResponse(filepath, filename=filepath, media_type='text/markdown')
+    return {"error": "Report not found. Generate it first using /api/report/generate"}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -37,8 +68,9 @@ async def websocket_endpoint(websocket: WebSocket):
             if message["type"] == "start":
                 game_id = message["gameId"]
                 algo_id = message["algoId"]
-                print(f"Starting training: {game_id} with {algo_id}")
-                asyncio.create_task(training_manager.start_training(game_id, algo_id, websocket))
+                env_mode = message.get("envMode", "static")  # Default to static if not specified
+                print(f"Starting training: {game_id} with {algo_id} (mode: {env_mode})")
+                asyncio.create_task(training_manager.start_training(game_id, algo_id, websocket, env_mode))
                 
             elif message["type"] == "stop":
                 print("Stopping training")

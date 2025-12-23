@@ -4,3 +4,4 @@ gymnasium[atari,accept-rom-license]
 numpy
 opencv-python
 pygame
+websockets

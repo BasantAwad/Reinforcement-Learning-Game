@@ -124,4 +124,8 @@ class TabularQLearningAgent(BaseAgent):
     def get_q_table(self):
         """Return copy of Q-table."""
         return self.q_table.copy()
+    
+    def get_epsilon(self):
+        """Return current exploration rate."""
+        return self.epsilon
 
