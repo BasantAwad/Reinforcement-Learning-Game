@@ -46,7 +46,10 @@ Reinforcement-Learning-Game/
 ├── backend/                  # Python FastAPI backend
 │   ├── agents/               # RL AGENT IMPLEMENTATIONS
 │   │   ├── base_agent.py     # Base agent class
-│   │   └── tabular.py        # Q-Learning, SARSA, DP agents
+│   │   ├── q_learning.py     # Q-Learning agent (tabular)
+│   │   ├── sarsa.py          # SARSA agent (tabular)
+│   │   ├── dynamic_programming.py # DP (value iteration)
+│   │   └── reinforce.py      # REINFORCE (policy gradient)
 │   ├── envs/                 # GAME ENVIRONMENTS
 │   │   └── jungle_dash.py    # Custom Pygame game (JungleDash)
 │   ├── main.py               # FastAPI WebSocket server
@@ -61,7 +64,7 @@ Reinforcement-Learning-Game/
 
 | Component            | Location                      | Description                           |
 | -------------------- | ----------------------------- | ------------------------------------- |
-| **Agent Algorithms** | `backend/agents/tabular.py`   | Q-Learning, SARSA, DP implementations |
+| **Agent Algorithms** | `backend/agents/`   | Q-Learning, SARSA, DP, REINFORCE implementations |
 | **Custom Game**      | `backend/envs/jungle_dash.py` | JungleDash Pygame environment         |
 | **Training Loop**    | `backend/training.py`         | WebSocket training orchestration      |
 | **UI**               | `frontend/src/App.tsx`        | React game selection & visualization  |

@@ -328,7 +328,7 @@ Input (CxHxW) → Conv2d(32, 8x8, stride=4) → ReLU
 
 ---
 
-### `TabularQLearningAgent` (agents/tabular.py)
+### `TabularQLearningAgent` (agents/q_learning.py)
 
 **Purpose**: Classic tabular Q-Learning agent for discrete state/action spaces.
 
@@ -352,7 +352,7 @@ Input (CxHxW) → Conv2d(32, 8x8, stride=4) → ReLU
 
 ---
 
-### `SARSAAgent` (agents/tabular.py)
+### `SARSAAgent` (agents/sarsa.py)
 
 **Purpose**: On-policy SARSA agent for discrete state/action spaces. Key difference from Q-Learning: uses the actual next action taken instead of max Q-value.
 
@@ -377,7 +377,7 @@ Input (CxHxW) → Conv2d(32, 8x8, stride=4) → ReLU
 
 ---
 
-### `DynamicProgrammingAgent` (agents/tabular.py)
+### `DynamicProgrammingAgent` (agents/dynamic_programming.py)
 
 **Purpose**: Value Iteration agent for environments with known dynamics (requires access to transition probabilities).
 
@@ -877,4 +877,13 @@ pip install miniworld
 
 ---
 
-*Documentation generated for AIE322 Advanced Machine Learning Final Project*
+## Deprecated Files
+
+- `backend/agents/tabular.py`: Previously contained combined tabular implementations (Q-Learning, SARSA, Dynamic Programming). The implementations have been split into separate files under `backend/agents/`:
+   - `q_learning.py`
+   - `sarsa.py`
+   - `dynamic_programming.py`
+
+   `tabular.py` is currently a deprecation stub to avoid breaking imports; it can be removed once documentation and external references are updated.
+
+*Documentation generated for AIE322 Advanced Machine Learning Final Project* 

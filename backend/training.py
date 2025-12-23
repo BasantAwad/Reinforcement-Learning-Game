@@ -1,10 +1,11 @@
-import gymnasium as gym
 import numpy as np
 import base64
 import cv2
-import json
 import asyncio
-from .agents.tabular import TabularQLearningAgent, SARSAAgent, DynamicProgrammingAgent
+from .agents.q_learning import TabularQLearningAgent
+from .agents.sarsa import SARSAAgent
+from .agents.dynamic_programming import DynamicProgrammingAgent
+from .agents.reinforce import REINFORCEAgent
 from .envs.jungle_dash import JungleDashEnv, register_jungle_dash
 
 # Register custom environments
@@ -12,23 +13,8 @@ register_jungle_dash()
 
 # Action name mappings for different games
 ACTION_NAMES = {
-    "Taxi": {0: "South", 1: "North", 2: "East", 3: "West", 4: "Pickup", 5: "Dropoff"},
-    "FrozenLake": {0: "Left", 1: "Down", 2: "Right", 3: "Up"},
-    "Blackjack": {0: "Stand", 1: "Hit"},
     "JungleDash": {0: "Up", 1: "Down", 2: "Left", 3: "Right"},
 }
-
-class BlackjackObsWrapper(gym.ObservationWrapper):
-    """Convert Blackjack tuple observation to integer for tabular agents."""
-    def __init__(self, env):
-        super().__init__(env)
-        # State space: player_sum (4-21=18 vals) x dealer_card (1-10=10 vals) x usable_ace (2 vals)
-        self.observation_space = gym.spaces.Discrete(18 * 10 * 2)
-    
-    def observation(self, obs):
-        player_sum, dealer_card, usable_ace = obs
-        # Map player_sum 4-21 to 0-17, dealer_card 1-10 to 0-9, usable_ace 0-1
-        return (player_sum - 4) * 20 + (dealer_card - 1) * 2 + int(usable_ace)
 
 class TrainingManager:
     def __init__(self):
@@ -71,31 +57,21 @@ class TrainingManager:
             render_mode = "rgb_array"
             
             try:
-                # Create environment based on game type (tabular games only)
-                if game_id == "Taxi":
-                    self.env = gym.make("Taxi-v3", render_mode=render_mode)
-                elif game_id == "Blackjack":
-                    self.env = gym.make("Blackjack-v1", render_mode=render_mode)
-                    self.env = BlackjackObsWrapper(self.env)
-                elif game_id == "FrozenLake":
-                    self.env = gym.make("FrozenLake-v1", render_mode=render_mode, is_slippery=False)
-                elif game_id == "JungleDash":
+                # Create JungleDash environment
+                if game_id == "JungleDash":
                     self.env = JungleDashEnv(render_mode=render_mode)
+                    print(f"Env Created Successfully: {game_id}")
+                    await self.send_log(websocket, f"Environment {game_id} initialized", "info")
                 else:
-                    # Default to FrozenLake
-                    await websocket.send_json({"type": "error", "message": f"Unknown game: {game_id}"})
-                    self.env = gym.make("FrozenLake-v1", render_mode=render_mode, is_slippery=False)
-                    self.current_game_id = "FrozenLake"
-                
-                print(f"Env Created Successfully: {game_id}")
-                await self.send_log(websocket, f"Environment {game_id} initialized", "info")
+                    error_msg = f"Unknown game: {game_id}. Only JungleDash is supported."
+                    print(error_msg)
+                    await websocket.send_json({"type": "error", "message": error_msg})
+                    return
             except Exception as e:
                 err_msg = f"Environment {game_id} creation failed: {str(e)}"
                 print(err_msg)
                 await websocket.send_json({"type": "error", "message": err_msg})
-                print(f"Fallback to FrozenLake.")
-                self.env = gym.make("FrozenLake-v1", render_mode="rgb_array", is_slippery=False)
-                self.current_game_id = "FrozenLake"
+                return
                 
             print("Resetting Env...")
             obs, _ = self.env.reset()
@@ -216,6 +192,8 @@ class TrainingManager:
         elif algo_id == "DP":
             self.agent = DynamicProgrammingAgent(self.env)
             self.agent.value_iteration()
+        elif algo_id == "REINFORCE":
+            self.agent = REINFORCEAgent(action_space, state_space_size=state_space_size)
         else:
             # Default to Q-Learning
             self.agent = TabularQLearningAgent(action_space, state_space_size=state_space_size)

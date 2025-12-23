@@ -9,8 +9,8 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // Types
-type Game = 'Taxi' | 'Blackjack' | 'FrozenLake' | 'JungleDash';
-type Algorithm = 'DP' | 'Q-Learning' | 'SARSA';
+type Game = 'JungleDash';
+type Algorithm = 'DP' | 'Q-Learning' | 'SARSA' | 'REINFORCE';
 type GameState = 'idle' | 'running' | 'stopped';
 
 interface LogEntry {
@@ -20,14 +20,14 @@ interface LogEntry {
     timestamp: Date;
 }
 
-// Available games (tabular environments only)
-const GAMES: Game[] = ['Taxi', 'Blackjack', 'FrozenLake', 'JungleDash'];
+// Available games
+const GAMES: Game[] = ['JungleDash'];
 
 // Main App Component
 function App() {
     const [isConnected, setIsConnected] = useState(false);
     const reconnectTimeoutRef = useRef<number | null>(null);
-    const [selectedGame, setSelectedGame] = useState<Game>('Taxi');
+    const [selectedGame, setSelectedGame] = useState<Game>('JungleDash');
     const [selectedAlgo, setSelectedAlgo] = useState<Algorithm>('Q-Learning');
     const [gameState, setGameState] = useState<GameState>('idle');
     const [stats, setStats] = useState<{ reward: number, steps: number, penalties: number, episode: number }[]>([{ reward: 0, steps: 0, penalties: 0, episode: 0 }]);
@@ -163,13 +163,7 @@ function App() {
         }
     };
 
-    // Check if algorithm is compatible with selected game
-    const isAlgoCompatible = (algo: Algorithm, game: Game) => {
-        // DP requires environments with transition probabilities (P attribute)
-        // Blackjack doesn't expose P, so DP is not compatible
-        if (algo === 'DP' && game === 'Blackjack') return false;
-        return true;
-    };
+
 
     return (
         <div className="min-h-screen bg-slate-900 text-white font-sans selection:bg-purple-500/30">
@@ -204,13 +198,7 @@ function App() {
                             {GAMES.map(game => (
                                 <button
                                     key={game}
-                                    onClick={() => {
-                                        setSelectedGame(game);
-                                        // Auto-select compatible algorithm
-                                        if (!isAlgoCompatible(selectedAlgo, game)) {
-                                            setSelectedAlgo('Q-Learning');
-                                        }
-                                    }}
+                                    onClick={() => setSelectedGame(game)}
                                     className={cn(
                                         "w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between group",
                                         selectedGame === game
@@ -231,27 +219,21 @@ function App() {
                             <Zap size={16} /> Algorithm
                         </h2>
                         <div className="space-y-2">
-                            {(['DP', 'Q-Learning', 'SARSA'] as Algorithm[]).map(algo => {
-                                const compatible = isAlgoCompatible(algo, selectedGame);
-
-                                return (
-                                    <button
-                                        key={algo}
-                                        onClick={() => setSelectedAlgo(algo)}
-                                        disabled={!compatible}
-                                        className={cn(
-                                            "w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between",
-                                            selectedAlgo === algo
-                                                ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
-                                                : "bg-slate-900/50 text-slate-400 hover:bg-slate-800 hover:text-white",
-                                            !compatible && "opacity-40 cursor-not-allowed bg-slate-900/30 text-slate-600"
-                                        )}
-                                    >
-                                        <span>{algo}</span>
-                                        {selectedAlgo === algo && <div className="w-2 h-2 bg-white rounded-full" />}
-                                    </button>
-                                );
-                            })}
+                            {(['DP', 'Q-Learning', 'SARSA', 'REINFORCE'] as Algorithm[]).map(algo => (
+                                <button
+                                    key={algo}
+                                    onClick={() => setSelectedAlgo(algo)}
+                                    className={cn(
+                                        "w-full text-left px-4 py-3 rounded-xl transition-all duration-200 flex items-center justify-between",
+                                        selectedAlgo === algo
+                                            ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20"
+                                            : "bg-slate-900/50 text-slate-400 hover:bg-slate-800 hover:text-white"
+                                    )}
+                                >
+                                    <span>{algo}</span>
+                                    {selectedAlgo === algo && <div className="w-2 h-2 bg-white rounded-full" />}
+                                </button>
+                            ))}
                         </div>
                     </div>
 
