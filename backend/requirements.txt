@@ -1,9 +1,6 @@
 fastapi
 uvicorn
-websockets
 gymnasium[atari,accept-rom-license]
-torch
 numpy
 opencv-python
-ale-py
-
+pygame
