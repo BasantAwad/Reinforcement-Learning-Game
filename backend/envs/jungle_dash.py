@@ -57,7 +57,7 @@ class JungleDashEnv(gym.Env):
         'trap': (60, 40, 20),
     }
     
-    def __init__(self, render_mode=None, grid_size=8, num_obstacles=6, num_rewards=4, num_traps=2, coins_to_win=3):
+    def __init__(self, render_mode=None, grid_size=8, num_obstacles=6, num_rewards=4, num_traps=2,static_mode=False,coins_to_win=4):
         super().__init__()
         
         self.grid_size = grid_size
@@ -66,6 +66,8 @@ class JungleDashEnv(gym.Env):
         self.num_traps = num_traps
         self.coins_to_win = coins_to_win  # Win by collecting this many coins
         self.render_mode = render_mode
+        self.static_mode = static_mode  # For DP: rewards don't disappear, goal reward is fixed
+        self.fixed_seed = 42 if static_mode else None  # Use fixed seed for consistent layouts in static mode
         self.max_steps = grid_size * grid_size * 2
         
         # Define action and observation spaces
@@ -164,6 +166,10 @@ class JungleDashEnv(gym.Env):
     
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
+        # In static mode, always use the same seed for consistent layout
+        if self.static_mode and seed is None:
+            seed = self.fixed_seed
+        
         super().reset(seed=seed)
         
         # Initialize empty grid
@@ -268,16 +274,13 @@ class JungleDashEnv(gym.Env):
         if cell_type == self.REWARD:
             self.rewards_collected += 1
             self.grid[new_pos[0], new_pos[1]] = self.EMPTY
-            
-            # Check if won by collecting enough coins!
-            if self.rewards_collected >= self.coins_to_win:
-                reward = 100 + (self.rewards_collected * 20)  # Big reward!
-                terminated = True
-                self.win_state = 'won'
-            else:
-                reward, terminated = 20, False
+            reward, terminated = 20, False
         elif cell_type == self.GOAL:
-            reward = 100 + (self.rewards_collected * 20)
+            # In static mode, goal reward is fixed (for DP compatibility)
+            if self.static_mode:
+                reward = 100
+            else:
+                reward = 100 + (self.rewards_collected * 20)
             terminated = True
             self.win_state = 'won'
         elif cell_type == self.TRAP:

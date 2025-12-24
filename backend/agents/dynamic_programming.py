@@ -35,7 +35,7 @@ class DynamicProgrammingAgent:
         π(s) = argmax_a Σ p(s',r|s,a)[r + γV(s')]
     """
     
-    def __init__(self, env, gamma=0.99, theta=1e-8):
+    def __init__(self, env, gamma=0.99, theta=1e-8, epsilon=0.05):
         """
         Initialize Value Iteration agent.
         
@@ -43,10 +43,12 @@ class DynamicProgrammingAgent:
             env: Gymnasium environment with P attribute
             gamma: Discount factor [0, 1]
             theta: Convergence threshold for value iteration
+            epsilon: Exploration rate to prevent getting stuck (small value for mostly greedy)
         """
         self.env = env
         self.gamma = gamma
         self.theta = theta
+        self.epsilon = epsilon
         
         # Get environment dimensions
         self.num_states = env.observation_space.n
@@ -121,7 +123,8 @@ class DynamicProgrammingAgent:
     
     def act(self, observation):
         """
-        Select action according to computed policy.
+        Select action according to computed policy with epsilon-greedy exploration.
+        This prevents getting stuck when the policy leads to obstacles.
         
         Args:
             observation: Current state
@@ -129,6 +132,10 @@ class DynamicProgrammingAgent:
         Returns:
             int: Action to take
         """
+        import random
+        # Epsilon-greedy: occasionally explore to avoid getting stuck
+        if random.random() < self.epsilon:
+            return int(self.env.action_space.sample())
         return int(self.policy[observation])
     
     def step(self, *args):
@@ -145,4 +152,8 @@ class DynamicProgrammingAgent:
     def get_policy(self):
         """Return the learned policy."""
         return self.policy.copy()
+    
+    def get_epsilon(self):
+        """Return current exploration rate."""
+        return self.epsilon
 
