@@ -7,7 +7,6 @@ from .agents.sarsa import SARSAAgent
 from .agents.dynamic_programming import DynamicProgrammingAgent
 from .agents.reinforce import REINFORCEAgent
 from .envs.jungle_dash import JungleDashEnv, register_jungle_dash
-from .metrics import metrics_tracker
 
 # Register custom environments
 register_jungle_dash()
@@ -28,8 +27,6 @@ class TrainingManager:
         self.total_penalties = 0
         self.current_game_id = None
         self.episode_count = 0
-        self.current_run_id = None
-        self.episode_start_penalties = 0
 
     def get_action_name(self, action: int) -> str:
         """Get human-readable action name for current game."""
@@ -48,13 +45,11 @@ class TrainingManager:
             }
         })
 
-    async def start_training(self, game_id: str, algo_id: str, websocket, env_mode: str = "static"):
+    async def start_training(self, game_id: str, algo_id: str, websocket):
         self.running = True
         self.current_game_id = game_id
         self.total_penalties = 0
         self.episode_count = 0
-        self.total_steps = 0
-        self.current_episode_reward = 0
         
         try:
             # Create Env
@@ -64,12 +59,9 @@ class TrainingManager:
             try:
                 # Create JungleDash environment
                 if game_id == "JungleDash":
-                    # Use static/dynamic mode based on user selection
-                    static_mode = (env_mode == "static")
-                    self.env = JungleDashEnv(render_mode=render_mode, static_mode=static_mode)
-                    print(f"Env Created Successfully: {game_id} (mode={env_mode})")
-                    mode_desc = "STATIC (rewards persist, fixed goal reward)" if static_mode else "DYNAMIC (rewards disappear, scaling goal reward)"
-                    await self.send_log(websocket, f"Environment {game_id} initialized in {mode_desc}", "info")
+                    self.env = JungleDashEnv(render_mode=render_mode)
+                    print(f"Env Created Successfully: {game_id}")
+                    await self.send_log(websocket, f"Environment {game_id} initialized", "info")
                 else:
                     error_msg = f"Unknown game: {game_id}. Only JungleDash is supported."
                     print(error_msg)
@@ -88,17 +80,6 @@ class TrainingManager:
             self.init_agent(algo_id, self.env.action_space.n)
             print("Agent Initialized.")
             await self.send_log(websocket, f"Agent ({algo_id}) initialized and ready", "info")
-            
-            # Start metrics tracking
-            config = {
-                'game': game_id,
-                'grid_size': 8,
-                'num_obstacles': 6,
-                'num_rewards': 4,
-                'num_traps': 2,
-            }
-            self.current_run_id = metrics_tracker.start_run(algo_id, env_mode, config)
-            print(f"Metrics tracking started: {self.current_run_id}")
             
         except Exception as e:
             print(f"Setup Error Crashing: {e}")
@@ -163,12 +144,8 @@ class TrainingManager:
                 self.agent.step(obs, action, reward, next_obs, done)
                 obs = next_obs
 
-                # Send Stats more frequently (every step initially, then every 10 steps)
-                # This ensures DP and other agents show movement immediately
-                if self.total_steps <= 20 or self.total_steps % 10 == 0:
-                    # Get epsilon if agent has it
-                    epsilon = self.agent.get_epsilon() if hasattr(self.agent, 'get_epsilon') else None
-                    
+                # Send Stats (every 10 steps to reduce traffic)
+                if self.total_steps % 10 == 0:
                     await websocket.send_json({
                         "type": "stats",
                         "data": {
@@ -176,103 +153,24 @@ class TrainingManager:
                             "steps": self.total_steps,
                             "penalties": self.total_penalties,
                             "episode": self.episode_count,
-                            "epsilon": epsilon,
                             "done": done
                         }
                     })
 
                 if done:
                     self.episode_count += 1
-                    
-                    # Determine win/loss status
                     if terminated and reward > 0:
-                        status = "WON"
-                        log_type = "success"
-                        message = f"🏆 Episode {self.episode_count} VICTORY! Collected {info['rewards_collected']}/{self.env.num_rewards} coins! Total reward: {self.current_episode_reward:.2f}"
+                        await self.send_log(websocket, f"Episode {self.episode_count} WON! Reward: {self.current_episode_reward:.2f}", "success")
                     elif terminated:
-                        status = "LOST"
-                        log_type = "failure"
-                        # Check if hit trap by inspecting the environment
-                        cell_type = self.env.grid[self.env.agent_pos[0], self.env.agent_pos[1]]
-                        if cell_type == self.env.TRAP:
-                            message = f"💥 Episode {self.episode_count} LOST! Fell into trap. Collected {info['rewards_collected']}/{self.env.num_rewards} coins. Total reward: {self.current_episode_reward:.2f}"
-                        else:
-                            message = f"❌ Episode {self.episode_count} LOST. Collected {info['rewards_collected']}/{self.env.num_rewards} coins. Total reward: {self.current_episode_reward:.2f}"
-                    elif truncated:
-                        status = "TIMEOUT"
-                        log_type = "failure"
-                        message = f"⏱️ Episode {self.episode_count} TIMEOUT! Ran out of time. Collected {info['rewards_collected']}/{self.env.num_rewards} coins. Total reward: {self.current_episode_reward:.2f}"
+                        await self.send_log(websocket, f"Episode {self.episode_count} LOST. Reward: {self.current_episode_reward:.2f}", "failure")
                     else:
-                        status = "ENDED"
-                        log_type = "info"
-                        message = f"Episode {self.episode_count} ended. Reward: {self.current_episode_reward:.2f}"
+                        await self.send_log(websocket, f"Episode {self.episode_count} ended (truncated). Reward: {self.current_episode_reward:.2f}", "info")
                     
-                    # Log the episode result
-                    await self.send_log(websocket, message, log_type)
-                    print(f"Episode {self.episode_count} {status}. Reward: {self.current_episode_reward}")
-                    
-                    # Pause for 2 seconds to show win/loss screen
-                    for _ in range(20):  # 20 frames at 0.1s each = 2 seconds
-                        try:
-                            # Keep rendering the win/loss screen
-                            frame = self.env.render()
-                            if frame is not None:
-                                if len(frame.shape) == 2:
-                                    frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-                                else:
-                                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                                
-                                if frame.dtype != np.uint8:
-                                    frame = (frame * 255).astype(np.uint8)
-
-                                _, buffer = cv2.imencode('.jpg', frame)
-                                frame_b64 = base64.b64encode(buffer).decode('utf-8')
-                                
-                                await websocket.send_json({
-                                    "type": "frame",
-                                    "data": frame_b64
-                                })
-                            await asyncio.sleep(0.1)  # 100ms per frame
-                        except Exception as e:
-                            print(f"Error showing win/loss screen: {e}")
-                            break
-                    
-                    # Save episode reward and reset
+                    print(f"Episode Done. Reward: {self.current_episode_reward}")
                     self.episode_rewards.append(self.current_episode_reward)
-                    
-                    # Get epsilon if agent has it
-                    epsilon = self.agent.get_epsilon() if hasattr(self.agent, 'get_epsilon') else None
-                    
-                    # Log to metrics tracker
-                    episode_penalties = self.total_penalties - self.episode_start_penalties
-                    metrics_tracker.log_episode(
-                        self.episode_count,
-                        self.current_episode_reward,
-                        self.total_steps,
-                        success,
-                        episode_penalties,
-                        epsilon
-                    )
-                    
-                    # Send final stats for completed episode
-                    await websocket.send_json({
-                        "type": "stats",
-                        "data": {
-                            "reward": self.current_episode_reward,
-                            "steps": self.total_steps,
-                            "penalties": self.total_penalties,
-                            "episode": self.episode_count,
-                            "epsilon": epsilon,
-                            "done": done
-                        }
-                    })
-                    
                     self.current_episode_reward = 0
-                    self.episode_start_penalties = self.total_penalties
                     obs, _ = self.env.reset()
-                    
-                    # Log restart
-                    await self.send_log(websocket, f"🔄 Starting Episode {self.episode_count + 1}...", "info")
+                    await self.send_log(websocket, "Environment reset - new episode starting", "info")
                 
                 await asyncio.sleep(0.01)  # Slightly longer sleep for readability
             except Exception as e:
@@ -302,13 +200,5 @@ class TrainingManager:
 
     def stop(self):
         self.running = False
-        
-        # End metrics tracking
-        if self.current_run_id:
-            run_summary = metrics_tracker.end_run()
-            if run_summary:
-                print(f"Metrics tracking ended: {self.current_run_id}")
-                print(f"Summary: {run_summary['summary']}")
-                
         if self.env:
             self.env.close()

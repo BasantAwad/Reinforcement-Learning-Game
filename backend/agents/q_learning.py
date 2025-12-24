@@ -1,9 +1,6 @@
 """
 Q-Learning - Temporal Difference Control Algorithm
 
-Implementation based on Sutton & Barto "Reinforcement Learning: An Introduction"
-Chapter 6: Temporal-Difference Learning
-
 Algorithm (Off-Policy TD Control):
 ----------------------------------
 Initialize Q(s,a) arbitrarily
