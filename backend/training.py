@@ -159,18 +159,67 @@ class TrainingManager:
 
                 if done:
                     self.episode_count += 1
-                    if terminated and reward > 0:
-                        await self.send_log(websocket, f"Episode {self.episode_count} WON! Reward: {self.current_episode_reward:.2f}", "success")
-                    elif terminated:
-                        await self.send_log(websocket, f"Episode {self.episode_count} LOST. Reward: {self.current_episode_reward:.2f}", "failure")
-                    else:
-                        await self.send_log(websocket, f"Episode {self.episode_count} ended (truncated). Reward: {self.current_episode_reward:.2f}", "info")
                     
-                    print(f"Episode Done. Reward: {self.current_episode_reward}")
+                    # Determine win/loss status
+                    if terminated and reward > 0:
+                        status = "WON"
+                        log_type = "success"
+                        message = f"🏆 Episode {self.episode_count} VICTORY! Collected {info['rewards_collected']}/{self.env.num_rewards} coins! Total reward: {self.current_episode_reward:.2f}"
+                    elif terminated:
+                        status = "LOST"
+                        log_type = "failure"
+                        # Check if hit trap by inspecting the environment
+                        cell_type = self.env.grid[self.env.agent_pos[0], self.env.agent_pos[1]]
+                        if cell_type == self.env.TRAP:
+                            message = f"💥 Episode {self.episode_count} LOST! Fell into trap. Collected {info['rewards_collected']}/{self.env.num_rewards} coins. Total reward: {self.current_episode_reward:.2f}"
+                        else:
+                            message = f"❌ Episode {self.episode_count} LOST. Collected {info['rewards_collected']}/{self.env.num_rewards} coins. Total reward: {self.current_episode_reward:.2f}"
+                    elif truncated:
+                        status = "TIMEOUT"
+                        log_type = "failure"
+                        message = f"⏱️ Episode {self.episode_count} TIMEOUT! Ran out of time. Collected {info['rewards_collected']}/{self.env.num_rewards} coins. Total reward: {self.current_episode_reward:.2f}"
+                    else:
+                        status = "ENDED"
+                        log_type = "info"
+                        message = f"Episode {self.episode_count} ended. Reward: {self.current_episode_reward:.2f}"
+                    
+                    # Log the episode result
+                    await self.send_log(websocket, message, log_type)
+                    print(f"Episode {self.episode_count} {status}. Reward: {self.current_episode_reward}")
+                    
+                    # Pause for 2 seconds to show win/loss screen
+                    for _ in range(20):  # 20 frames at 0.1s each = 2 seconds
+                        try:
+                            # Keep rendering the win/loss screen
+                            frame = self.env.render()
+                            if frame is not None:
+                                if len(frame.shape) == 2:
+                                    frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+                                else:
+                                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                                
+                                if frame.dtype != np.uint8:
+                                    frame = (frame * 255).astype(np.uint8)
+
+                                _, buffer = cv2.imencode('.jpg', frame)
+                                frame_b64 = base64.b64encode(buffer).decode('utf-8')
+                                
+                                await websocket.send_json({
+                                    "type": "frame",
+                                    "data": frame_b64
+                                })
+                            await asyncio.sleep(0.1)  # 100ms per frame
+                        except Exception as e:
+                            print(f"Error showing win/loss screen: {e}")
+                            break
+                    
+                    # Save episode reward and reset
                     self.episode_rewards.append(self.current_episode_reward)
                     self.current_episode_reward = 0
                     obs, _ = self.env.reset()
-                    await self.send_log(websocket, "Environment reset - new episode starting", "info")
+                    
+                    # Log restart
+                    await self.send_log(websocket, f"🔄 Starting Episode {self.episode_count + 1}...", "info")
                 
                 await asyncio.sleep(0.01)  # Slightly longer sleep for readability
             except Exception as e:

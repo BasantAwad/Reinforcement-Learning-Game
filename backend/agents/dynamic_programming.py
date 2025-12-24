@@ -1,9 +1,5 @@
 """
 Dynamic Programming - Value Iteration Algorithm
-
-Implementation based on Sutton & Barto "Reinforcement Learning: An Introduction"
-Chapter 4: Dynamic Programming
-
 Algorithm:
 ---------
 Initialize V(s) = 0 for all states

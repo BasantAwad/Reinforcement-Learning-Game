@@ -57,13 +57,14 @@ class JungleDashEnv(gym.Env):
         'trap': (60, 40, 20),
     }
     
-    def __init__(self, render_mode=None, grid_size=8, num_obstacles=6, num_rewards=4, num_traps=2):
+    def __init__(self, render_mode=None, grid_size=8, num_obstacles=6, num_rewards=4, num_traps=2, coins_to_win=3):
         super().__init__()
         
         self.grid_size = grid_size
         self.num_obstacles = num_obstacles
         self.num_rewards = num_rewards
         self.num_traps = num_traps
+        self.coins_to_win = coins_to_win  # Win by collecting this many coins
         self.render_mode = render_mode
         self.max_steps = grid_size * grid_size * 2
         
@@ -95,6 +96,9 @@ class JungleDashEnv(gym.Env):
         self.reward_positions = []
         self.trap_positions = []
         self.obstacle_positions = []
+        
+        # Win/Loss state for rendering special screens
+        self.win_state = None  # 'won', 'lost', or None
     
     def _load_sprites(self):
         """Load sprite images for game elements."""
@@ -182,6 +186,7 @@ class JungleDashEnv(gym.Env):
         
         self.rewards_collected = 0
         self.steps = 0
+        self.win_state = None  # Clear win/loss state
         
         # Build transition probability matrix for Dynamic Programming
         self._build_transition_matrix()
@@ -263,12 +268,21 @@ class JungleDashEnv(gym.Env):
         if cell_type == self.REWARD:
             self.rewards_collected += 1
             self.grid[new_pos[0], new_pos[1]] = self.EMPTY
-            reward, terminated = 20, False
+            
+            # Check if won by collecting enough coins!
+            if self.rewards_collected >= self.coins_to_win:
+                reward = 100 + (self.rewards_collected * 20)  # Big reward!
+                terminated = True
+                self.win_state = 'won'
+            else:
+                reward, terminated = 20, False
         elif cell_type == self.GOAL:
             reward = 100 + (self.rewards_collected * 20)
             terminated = True
+            self.win_state = 'won'
         elif cell_type == self.TRAP:
             reward, terminated = -20, True
+            self.win_state = 'lost'
         else:
             reward, terminated = 0, False
         
@@ -276,6 +290,7 @@ class JungleDashEnv(gym.Env):
         truncated = self.steps >= self.max_steps
         if truncated and not terminated:
             reward = -5
+            self.win_state = 'lost'
         
         return self._get_obs(), reward, terminated, truncated, self._get_info()
     
@@ -322,6 +337,12 @@ class JungleDashEnv(gym.Env):
         
         # Draw agent
         self._draw_agent(canvas)
+        
+        # Draw win/loss screen overlay if episode ended
+        if self.win_state == 'won':
+            self._draw_win_screen(canvas)
+        elif self.win_state == 'lost':
+            self._draw_loss_screen(canvas)
         
         if self.render_mode == "human":
             self.window.blit(canvas, canvas.get_rect())
@@ -494,6 +515,93 @@ class JungleDashEnv(gym.Env):
                 pygame.draw.circle(canvas, (255, 255, 255), (center_x + shine_x, center_y - 8), 2)
             # Mouth
             pygame.draw.arc(canvas, (0, 0, 0), (center_x - 10, center_y, 20, 12), 3.14, 0, 2)
+    
+    def _draw_win_screen(self, canvas):
+        """Draw victory screen overlay."""
+        # Semi-transparent green overlay
+        overlay = pygame.Surface((self.window_size, self.window_size))
+        overlay.set_alpha(200)
+        overlay.fill((34, 139, 34))  # Forest green
+        canvas.blit(overlay, (0, 0))
+        
+        # Victory banner
+        banner_height = 120
+        banner_y = self.window_size // 2 - banner_height // 2
+        pygame.draw.rect(canvas, (255, 215, 0), 
+                        (50, banner_y, self.window_size - 100, banner_height), 
+                        border_radius=20)
+        pygame.draw.rect(canvas, (255, 255, 255), 
+                        (50, banner_y, self.window_size - 100, banner_height), 
+                        width=5, border_radius=20)
+        
+        # Win text
+        if not hasattr(self, '_font_large'):
+            pygame.font.init()
+            self._font_large = pygame.font.Font(None, 72)
+            self._font_medium = pygame.font.Font(None, 48)
+            self._font_small = pygame.font.Font(None, 32)
+        
+        win_text = self._font_large.render("VICTORY!", True, (0, 128, 0))
+        text_rect = win_text.get_rect(center=(self.window_size // 2, self.window_size // 2 - 20))
+        canvas.blit(win_text, text_rect)
+        
+        # Coins collected message
+        coins_text = self._font_medium.render(f"Collected {self.rewards_collected}/{self.num_rewards} coins!", 
+                                             True, (255, 215, 0))
+        coins_rect = coins_text.get_rect(center=(self.window_size // 2, self.window_size // 2 + 35))
+        canvas.blit(coins_text, coins_rect)
+        
+        # Stars decoration
+        star_positions = [(100, 100), (self.window_size - 100, 100), 
+                         (100, self.window_size - 100), (self.window_size - 100, self.window_size - 100)]
+        for x, y in star_positions:
+            self._draw_star(canvas, x, y, 30, (255, 255, 0))
+    
+    def _draw_loss_screen(self, canvas):
+        """Draw game over screen overlay."""
+        # Semi-transparent red overlay
+        overlay = pygame.Surface((self.window_size, self.window_size))
+        overlay.set_alpha(200)
+        overlay.fill((139, 0, 0))  # Dark red
+        canvas.blit(overlay, (0, 0))
+        
+        # Game over banner
+        banner_height = 120
+        banner_y = self.window_size // 2 - banner_height // 2
+        pygame.draw.rect(canvas, (255, 69, 0), 
+                        (50, banner_y, self.window_size - 100, banner_height), 
+                        border_radius=20)
+        pygame.draw.rect(canvas, (255, 255, 255), 
+                        (50, banner_y, self.window_size - 100, banner_height), 
+                        width=5, border_radius=20)
+        
+        # Loss text
+        if not hasattr(self, '_font_large'):
+            pygame.font.init()
+            self._font_large = pygame.font.Font(None, 72)
+            self._font_medium = pygame.font.Font(None, 48)
+            self._font_small = pygame.font.Font(None, 32)
+        
+        loss_text = self._font_large.render("GAME OVER!", True, (139, 0, 0))
+        text_rect = loss_text.get_rect(center=(self.window_size // 2, self.window_size // 2 - 20))
+        canvas.blit(loss_text, text_rect)
+        
+        # Score message
+        score_text = self._font_medium.render(f"Collected {self.rewards_collected}/{self.num_rewards} coins", 
+                                             True, (255, 255, 255))
+        score_rect = score_text.get_rect(center=(self.window_size // 2, self.window_size // 2 + 35))
+        canvas.blit(score_text, score_rect)
+    
+    def _draw_star(self, canvas, x, y, size, color):
+        """Draw a star for decoration."""
+        points = []
+        for i in range(10):
+            angle = math.radians(i * 36 - 90)
+            radius = size if i % 2 == 0 else size // 2
+            px = x + int(radius * math.cos(angle))
+            py = y + int(radius * math.sin(angle))
+            points.append((px, py))
+        pygame.draw.polygon(canvas, color, points)
     
     def close(self):
         """Clean up pygame resources."""
